@@ -1,0 +1,208 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: stable or beta
+        required: true
+        type: choice
+        options:
+          - stable
+          - beta
+      tag:
+        description: Release tag (e.g. v0.1.0)
+        required: true
+        type: string
+      spec_path:
+        description: Path to release spec JSON in this repo
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build_bundles:
+    name: Build bundles (${{ matrix.bundle_os }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            bundle_os: windows
+            arch: x86_64
+            exe: .exe
+          - runner: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
+            bundle_os: linux
+            arch: x86_64
+            exe: ""
+          - runner: macos-13
+            rust_target: x86_64-apple-darwin
+            bundle_os: macos
+            arch: x86_64
+            exe: ""
+          - runner: macos-14
+            rust_target: aarch64-apple-darwin
+            bundle_os: macos
+            arch: arm64
+            exe: ""
+
+    steps:
+      - name: Checkout distribution
+        uses: actions/checkout@v4
+
+      - name: Read release spec
+        id: spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "${{ inputs.spec_path }}"
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import sys
+
+          path = "${{ inputs.spec_path }}"
+          spec = json.load(open(path, "r", encoding="utf-8"))
+
+          def get_sha(repo_id: str) -> str:
+              for r in spec.get("repos", []):
+                  if r.get("id") == repo_id:
+                      sha = r.get("sha")
+                      if not isinstance(sha, str) or len(sha) != 40:
+                          raise SystemExit(f"invalid sha for {repo_id}: {sha!r}")
+                      return sha
+              raise SystemExit(f"missing repo id in spec: {repo_id}")
+
+          print(f"loader_sha={get_sha('loader')}")
+          print(f"bridge_sha={get_sha('oc-bridge')}")
+          PY
+
+      - name: Checkout loader
+        uses: actions/checkout@v4
+        with:
+          repository: petitechose-midi-studio/loader
+          ref: ${{ steps.spec.outputs.loader_sha }}
+          path: src/loader
+
+      - name: Checkout oc-bridge
+        uses: actions/checkout@v4
+        with:
+          repository: open-control/bridge
+          ref: ${{ steps.spec.outputs.bridge_sha }}
+          path: src/oc-bridge
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build loader
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --target "${{ matrix.rust_target }}"
+        working-directory: src/loader
+
+      - name: Build oc-bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --target "${{ matrix.rust_target }}"
+        working-directory: src/oc-bridge
+
+      - name: Package bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          LOADER="src/loader/target/${{ matrix.rust_target }}/release/midi-studio-loader${{ matrix.exe }}"
+          BRIDGE="src/oc-bridge/target/${{ matrix.rust_target }}/release/oc-bridge${{ matrix.exe }}"
+          test -f "$LOADER"
+          test -f "$BRIDGE"
+          OUT="dist/midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle.zip"
+          python scripts/package_bundle.py --out "$OUT" --loader "$LOADER" --oc-bridge "$BRIDGE" --oc-bridge-config "src/oc-bridge/config"
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle
+          path: dist/midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle.zip
+
+  release:
+    name: Sign and publish release
+    runs-on: ubuntu-latest
+    needs: [build_bundles]
+    environment: release
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout distribution
+        uses: actions/checkout@v4
+
+      - name: Download bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist_flat
+          find dist -maxdepth 3 -type f -name '*.zip' -print -exec cp '{}' dist_flat/ \;
+          ls -la dist_flat
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -p ms-dist-manifest -- build --spec "${{ inputs.spec_path }}" --dist dist_flat --out manifest.json
+
+      - name: Sign manifest
+        shell: bash
+        env:
+          MS_DIST_ED25519_SK: ${{ secrets.MS_DIST_ED25519_SK }}
+        run: |
+          set -euo pipefail
+          cargo run -p ms-dist-manifest -- sign --in manifest.json --out manifest.json.sig
+
+      - name: Verify manifest signature
+        shell: bash
+        env:
+          MS_DIST_ED25519_SK: ${{ secrets.MS_DIST_ED25519_SK }}
+        run: |
+          set -euo pipefail
+          PK=$(cargo run -p ms-dist-manifest -- pubkey)
+          MS_DIST_ED25519_PK="$PK" cargo run -p ms-dist-manifest -- verify --in manifest.json --sig manifest.json.sig
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          EXTRA_FLAGS=()
+          if [ "${{ inputs.channel }}" = "beta" ]; then
+            EXTRA_FLAGS+=("--prerelease")
+          fi
+          gh release create "${{ inputs.tag }}" \
+            dist_flat/*.zip \
+            manifest.json manifest.json.sig \
+            --title "${{ inputs.tag }}" \
+            --notes "channel=${{ inputs.channel }}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            "${EXTRA_FLAGS[@]}"

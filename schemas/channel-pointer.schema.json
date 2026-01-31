@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://petitechose-midi-studio.github.io/distribution/schemas/channel-pointer.schema.json",
+  "title": "MIDI Studio channel pointer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "channel", "key_id", "tag", "manifest_url", "signature_url"],
+  "properties": {
+    "schema": {
+      "type": "integer",
+      "const": 1
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["stable", "beta", "nightly"]
+    },
+    "key_id": {
+      "type": "string",
+      "enum": ["stable", "nightly"]
+    },
+    "tag": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "manifest_url": {
+      "type": ["string", "null"],
+      "format": "uri"
+    },
+    "signature_url": {
+      "type": ["string", "null"],
+      "format": "uri"
+    }
+  }
+}
