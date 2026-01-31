@@ -177,7 +177,6 @@ jobs:
     environment: nightly
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - name: Checkout distribution
         uses: actions/checkout@v4
@@ -241,6 +240,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          git checkout main
+          git pull --ff-only origin main
+
           TAG="${{ needs.select_spec.outputs.tag }}"
           CHANNEL_FILE="channels/nightly.json"
           MANIFEST_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/manifest.json"
@@ -254,20 +256,8 @@ jobs:
             --manifest-url "$MANIFEST_URL" \
             --signature-url "$SIG_URL"
 
-          BRANCH="channels/nightly-${TAG}"
-          git checkout -b "$BRANCH"
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add "$CHANNEL_FILE"
           git commit -m "channels: update nightly -> ${TAG}"
-          git push -u origin "$BRANCH"
-
-          gh pr create \
-            --base main \
-            --head "$BRANCH" \
-            --title "channels: update nightly -> ${TAG}" \
-            --body "Auto-update nightly channel pointer after release publish." \
-            --repo "${GITHUB_REPOSITORY}"
-
-          PR_URL=$(gh pr view --head "$BRANCH" --json url -q .url)
-          gh pr merge "$PR_URL" --squash --delete-branch --repo "${GITHUB_REPOSITORY}"
+          git push origin main
