@@ -1,0 +1,36 @@
+{
+  "schema": 2,
+  "channel": "stable",
+  "tag": "v0.1.0",
+  "published_at": "2026-01-31T00:00:00Z",
+  "repos": [
+    {
+      "id": "loader",
+      "url": "https://github.com/petitechose-midi-studio/loader",
+      "sha": "0000000000000000000000000000000000000000"
+    }
+  ],
+  "assets": [
+    {
+      "id": "bundle-windows-x86_64",
+      "kind": "bundle",
+      "os": "windows",
+      "arch": "x86_64",
+      "filename": "midi-studio-windows-x86_64-bundle.zip",
+      "size": 123,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "url": "https://example.invalid/download/midi-studio-windows-x86_64-bundle.zip"
+    }
+  ],
+  "install_sets": [
+    {
+      "id": "default",
+      "os": "windows",
+      "arch": "x86_64",
+      "assets": ["bundle-windows-x86_64"]
+    }
+  ],
+  "pages": {
+    "demo_url": "https://petitechose-midi-studio.github.io/distribution/demos/stable/"
+  }
+}

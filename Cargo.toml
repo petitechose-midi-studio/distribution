@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "tools/ms-dist-manifest",
+]
+
+resolver = "2"
