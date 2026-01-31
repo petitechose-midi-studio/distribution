@@ -66,6 +66,13 @@ enum Command {
         #[arg(long, default_value = "MS_DIST_ED25519_PK")]
         pk_env: String,
     },
+
+    /// Print the base64 public key for a secret key seed.
+    Pubkey {
+        /// Secret key seed env var name (base64, 32 bytes)
+        #[arg(long, default_value = "MS_DIST_ED25519_SK")]
+        key_env: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,6 +182,7 @@ fn run() -> Result<()> {
             key_env,
         } => cmd_sign(&input, &out, &key_env),
         Command::Verify { input, sig, pk_env } => cmd_verify(&input, &sig, &pk_env),
+        Command::Pubkey { key_env } => cmd_pubkey(&key_env),
     }
 }
 
@@ -311,6 +319,16 @@ fn cmd_verify(input: &Path, sig_path: &Path, pk_env: &str) -> Result<()> {
 
     vk.verify_strict(&manifest_bytes, &sig)
         .map_err(|e| anyhow!("signature verify failed: {e}"))?;
+    Ok(())
+}
+
+fn cmd_pubkey(key_env: &str) -> Result<()> {
+    let sk_b64 = env::var(key_env).with_context(|| format!("missing env var: {key_env}"))?;
+    let sk =
+        decode_32_bytes(&sk_b64).with_context(|| format!("decode {key_env} (base64, 32 bytes)"))?;
+    let signing_key = SigningKey::from_bytes(&sk);
+    let pk_b64 = B64.encode(signing_key.verifying_key().to_bytes());
+    println!("{pk_b64}");
     Ok(())
 }
 
