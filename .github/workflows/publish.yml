@@ -208,11 +208,19 @@ jobs:
           if [ "${{ inputs.channel }}" = "beta" ]; then
             EXTRA_FLAGS+=("--prerelease")
           fi
+
+          NOTES_ARGS=()
+          NOTES_FILE="release-notes/${{ inputs.tag }}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            NOTES_ARGS+=("--notes-file" "$NOTES_FILE")
+          else
+            NOTES_ARGS+=("--notes" "channel=${{ inputs.channel }}")
+          fi
           gh release create "${{ inputs.tag }}" \
             dist_flat/*.zip \
             manifest.json manifest.json.sig \
             --title "${{ inputs.tag }}" \
-            --notes "channel=${{ inputs.channel }}" \
+            "${NOTES_ARGS[@]}" \
             --repo "${GITHUB_REPOSITORY}" \
             "${EXTRA_FLAGS[@]}"
 
