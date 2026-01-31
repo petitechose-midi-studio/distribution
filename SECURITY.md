@@ -16,8 +16,9 @@ Stable/beta releases are signed in GitHub Actions using an **Environment secret*
 - Environment: `release`
 - Secret: `MS_DIST_ED25519_SK` (base64, 32-byte Ed25519 signing key seed)
 
-Nightly can use a separate key (recommended):
-- Secret: `MS_DIST_ED25519_SK_NIGHTLY` (repo secret or a `nightly` environment)
+Nightly uses a separate key (recommended):
+- Environment: `nightly`
+- Secret: `MS_DIST_ED25519_SK_NIGHTLY` (base64, 32-byte Ed25519 signing key seed)
 
 Public keys are embedded in `ms-manager`.
 
@@ -30,13 +31,19 @@ This repo should treat workflow changes as security-critical.
 
 Branch protection on `main`:
 - Require pull request before merging
-- Require Code Owner review
-- Require 1+ approvals
+- (recommended when there are 2+ maintainers) Require Code Owner review + approvals
 - Disable force-push and branch deletion
+- Require conversation resolution
 
 Actions environments:
 - `release` environment requires approval (at least you)
 - Put `MS_DIST_ED25519_SK` only in the `release` environment
+- `nightly` environment can remain unapproved, but should use a separate key
+
+## Channel pointers
+
+`channels/{stable,beta,nightly}.json` include a `key_id` field.
+`ms-manager` should use this to select the appropriate embedded public key.
 
 Workflow triggers:
 - Release publishing should run only via `workflow_dispatch` (manual)
