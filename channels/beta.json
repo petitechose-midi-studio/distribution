@@ -2,7 +2,7 @@
   "schema": 1,
   "channel": "beta",
   "key_id": "stable",
-  "tag": null,
-  "manifest_url": null,
-  "signature_url": null
+  "tag": "v0.0.0-test.3",
+  "manifest_url": "https://github.com/petitechose-midi-studio/distribution/releases/download/v0.0.0-test.3/manifest.json",
+  "signature_url": "https://github.com/petitechose-midi-studio/distribution/releases/download/v0.0.0-test.3/manifest.json.sig"
 }
