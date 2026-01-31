@@ -6,7 +6,9 @@ members = [
 # This repo checks out other Rust repos under `src/` during CI.
 # Exclude them so Cargo doesn't try to treat them as workspace members.
 exclude = [
-  "src/*",
+  "src/loader",
+  "src/oc-bridge",
+  "src/ms-manager",
 ]
 
 resolver = "2"
