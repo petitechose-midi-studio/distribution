@@ -1,0 +1,7 @@
+* @petitechose-audio
+
+# Critical paths (must be reviewed carefully)
+/.github/workflows/ @petitechose-audio
+/tools/ @petitechose-audio
+/schemas/ @petitechose-audio
+/channels/ @petitechose-audio
