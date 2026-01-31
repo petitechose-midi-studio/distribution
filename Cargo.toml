@@ -3,4 +3,10 @@ members = [
   "tools/ms-dist-manifest",
 ]
 
+# This repo checks out other Rust repos under `src/` during CI.
+# Exclude them so Cargo doesn't try to treat them as workspace members.
+exclude = [
+  "src/*",
+]
+
 resolver = "2"

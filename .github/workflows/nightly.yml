@@ -73,12 +73,12 @@ jobs:
             bundle_os: linux
             arch: x86_64
             exe: ""
-          - runner: macos-13
+          - runner: macos-15-intel
             rust_target: x86_64-apple-darwin
             bundle_os: macos
             arch: x86_64
             exe: ""
-          - runner: macos-14
+          - runner: macos-latest
             rust_target: aarch64-apple-darwin
             bundle_os: macos
             arch: arm64
