@@ -28,8 +28,8 @@ jobs:
           rm -rf public
           mkdir -p public
           cp -R pages/. public/
-          mkdir -p public/channels
-          cp channels/*.json public/channels/
+          mkdir -p public/schemas
+          cp schemas/*.json public/schemas/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

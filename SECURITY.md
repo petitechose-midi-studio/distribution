@@ -40,10 +40,11 @@ Actions environments:
 - Put `MS_DIST_ED25519_SK` only in the `release` environment
 - `nightly` environment can remain unapproved, but should use a separate key
 
-## Channel pointers
+## Channel selection
 
-`channels/{stable,beta,nightly}.json` include a `key_id` field.
-`ms-manager` should use this to select the appropriate embedded public key.
+`ms-manager` resolves the latest tag for the selected channel using GitHub Releases and verifies:
+- `manifest.json.sig` (Ed25519)
+- each downloaded asset sha256
 
 Workflow triggers:
 - Release publishing should run only via `workflow_dispatch` (manual)
