@@ -4,7 +4,6 @@ This repo is the public, end-user distribution feed for MIDI Studio.
 
 It will contain:
 - `schemas/`: JSON schemas for the release inputs (`release-spec.json`) and outputs (`manifest.json`).
-- `channels/`: channel pointers used by `ms-manager` (stable/beta/nightly).
 - GitHub Releases: bundle assets + `manifest.json` + `manifest.json.sig`.
 
 ## Signing

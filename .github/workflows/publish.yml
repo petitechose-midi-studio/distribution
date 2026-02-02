@@ -237,24 +237,3 @@ jobs:
             "${NOTES_ARGS[@]}" \
             --repo "${GITHUB_REPOSITORY}" \
             "${EXTRA_FLAGS[@]}"
-
-      - name: Channel pointer info
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          CHANNEL_FILE="channels/${{ inputs.channel }}.json"
-          MANIFEST_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ inputs.tag }}/manifest.json"
-          SIG_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ inputs.tag }}/manifest.json.sig"
-
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## Channel pointer update (manual)
-
-          Org policy currently prevents GitHub Actions from creating pull requests.
-          This repo requires PRs for changes to main, so channel pointers must be updated manually.
-
-          - File: \\`$CHANNEL_FILE\\`
-          - tag: \\`${{ inputs.tag }}\\`
-          - manifest_url: $MANIFEST_URL
-          - signature_url: $SIG_URL
-          EOF
