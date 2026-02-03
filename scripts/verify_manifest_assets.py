@@ -6,6 +6,7 @@ import json
 import zipfile
 from pathlib import Path
 from typing import cast
+import urllib.request
 
 
 def _as_object(v: object, ctx: str) -> dict[str, object]:
@@ -49,6 +50,25 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _download_to_path(*, url: str, out_path: Path) -> None:
+    if not url.startswith("https://"):
+        raise ValueError(f"unsupported url (expected https): {url}")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_path.with_name(out_path.name + ".part")
+
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=120) as r:
+        with tmp.open("wb") as f:
+            while True:
+                b = r.read(1024 * 1024)
+                if not b:
+                    break
+                f.write(b)
+
+    tmp.replace(out_path)
+
+
 def _validate_bundle_zip(path: Path) -> None:
     with zipfile.ZipFile(path, "r") as zf:
         names = zf.namelist()
@@ -70,6 +90,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Verify assets directory matches manifest.json")
     ap.add_argument("--manifest", required=True, help="Path to manifest.json")
     ap.add_argument("--assets-dir", required=True, help="Directory containing asset files")
+    ap.add_argument(
+        "--fetch-urls",
+        action="store_true",
+        help="Download missing assets referenced via manifest.assets[].url",
+    )
     args = ap.parse_args()
 
     manifest_path = Path(args.manifest)
@@ -89,10 +114,17 @@ def main() -> int:
         filename = _as_str(a.get("filename"), f"manifest.assets[{i}].filename")
         expected_size = _as_int(a.get("size"), f"manifest.assets[{i}].size")
         expected_sha = _as_str(a.get("sha256"), f"manifest.assets[{i}].sha256")
+        url_any = a.get("url")
+        url = url_any if isinstance(url_any, str) and url_any else None
 
         p = assets_dir / filename
         if not p.exists() or not p.is_file():
-            raise FileNotFoundError(f"missing asset file: {p}")
+            if args.fetch_urls and url is not None:
+                fetched = assets_dir / "_fetched" / filename
+                _download_to_path(url=url, out_path=fetched)
+                p = fetched
+            else:
+                raise FileNotFoundError(f"missing asset file: {p}")
 
         got_size = p.stat().st_size
         if got_size != expected_size:
