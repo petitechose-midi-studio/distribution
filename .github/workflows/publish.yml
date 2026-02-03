@@ -226,6 +226,7 @@ jobs:
     needs: [plan, build_bundles, build_integrations]
     if: >-
       ${{
+        always() &&
         needs.plan.result == 'success' &&
         (needs.build_bundles.result == 'success' || needs.build_bundles.result == 'skipped') &&
         (needs.build_integrations.result == 'success' || needs.build_integrations.result == 'skipped')
