@@ -52,6 +52,28 @@ def _get_latest_green_sha(token: str, owner_repo: str, workflow_file: str) -> st
     return head_sha
 
 
+def _get_head_sha(token: str, owner_repo: str, ref: str) -> str:
+    # Fallback selector for repos without CI gating.
+    url = f"https://api.github.com/repos/{owner_repo}/commits/{urllib.parse.quote(ref)}"
+
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    req.add_header("Authorization", f"Bearer {token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data: dict[str, Any] = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub API error for {owner_repo}@{ref}: {e.code} {msg}")
+
+    sha = data.get("sha")
+    if not isinstance(sha, str) or len(sha) != 40:
+        raise RuntimeError(f"invalid commit payload for {owner_repo}@{ref}: sha={sha!r}")
+    return sha
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Select latest green commits and fill a release spec")
     ap.add_argument("--template", required=True, help="Path to nightly.template.json")
@@ -87,17 +109,25 @@ def main() -> int:
         r_any = cast(dict[str, Any], r_obj)
 
         repo_url = r_any.get("url")
+        ref = r_any.get("ref")
         wf = r_any.get("required_ci_workflow_file")
-        if not isinstance(repo_url, str) or not isinstance(wf, str):
+        if not isinstance(repo_url, str) or not isinstance(ref, str):
             print(f"invalid repo entry: {r_any}", file=sys.stderr)
             return 1
 
         slug = _repo_slug_from_url(repo_url)
-        sha = _get_latest_green_sha(token, slug, wf)
-        if sha is None:
-            print(f"skip nightly: no successful CI run for {slug} ({wf})", file=sys.stderr)
-            return 2
-        r_any["sha"] = sha
+
+        # If required_ci_workflow_file is present, enforce a green commit.
+        if isinstance(wf, str) and wf:
+            sha = _get_latest_green_sha(token, slug, wf)
+            if sha is None:
+                print(f"skip nightly: no successful CI run for {slug} ({wf})", file=sys.stderr)
+                return 2
+            r_any["sha"] = sha
+            continue
+
+        # Otherwise: pin to the head commit of the ref and let the distribution build be the guard.
+        r_any["sha"] = _get_head_sha(token, slug, ref)
 
     spec["tag"] = args.tag
     spec_bytes = json.dumps(spec, indent=2, sort_keys=False).encode("utf-8")

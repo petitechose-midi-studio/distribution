@@ -16,6 +16,18 @@
       "ref": "main",
       "sha": "0000000000000000000000000000000000000000",
       "required_ci_workflow_file": ".github/workflows/ci.yml"
+    },
+    {
+      "id": "core",
+      "url": "https://github.com/petitechose-midi-studio/core",
+      "ref": "main",
+      "sha": "0000000000000000000000000000000000000000"
+    },
+    {
+      "id": "plugin-bitwig",
+      "url": "https://github.com/petitechose-midi-studio/plugin-bitwig",
+      "ref": "main",
+      "sha": "0000000000000000000000000000000000000000"
     }
   ],
   "assets": [
@@ -46,6 +58,21 @@
       "os": "linux",
       "arch": "x86_64",
       "filename": "midi-studio-linux-x86_64-bundle.zip"
+    },
+    {
+      "id": "firmware-default",
+      "kind": "firmware",
+      "filename": "midi-studio-default-firmware.hex"
+    },
+    {
+      "id": "firmware-bitwig",
+      "kind": "firmware",
+      "filename": "midi-studio-bitwig-firmware.hex"
+    },
+    {
+      "id": "bitwig-extension",
+      "kind": "bitwig-extension",
+      "filename": "midi_studio.bwextension"
     }
   ],
   "install_sets": [
@@ -53,25 +80,49 @@
       "id": "default",
       "os": "windows",
       "arch": "x86_64",
-      "assets": ["bundle-windows-x86_64"]
+      "assets": ["bundle-windows-x86_64", "firmware-default"]
     },
     {
       "id": "default",
       "os": "macos",
       "arch": "x86_64",
-      "assets": ["bundle-macos-x86_64"]
+      "assets": ["bundle-macos-x86_64", "firmware-default"]
     },
     {
       "id": "default",
       "os": "macos",
       "arch": "arm64",
-      "assets": ["bundle-macos-arm64"]
+      "assets": ["bundle-macos-arm64", "firmware-default"]
     },
     {
       "id": "default",
       "os": "linux",
       "arch": "x86_64",
-      "assets": ["bundle-linux-x86_64"]
+      "assets": ["bundle-linux-x86_64", "firmware-default"]
+    },
+    {
+      "id": "bitwig",
+      "os": "windows",
+      "arch": "x86_64",
+      "assets": ["bundle-windows-x86_64", "firmware-bitwig", "bitwig-extension"]
+    },
+    {
+      "id": "bitwig",
+      "os": "macos",
+      "arch": "x86_64",
+      "assets": ["bundle-macos-x86_64", "firmware-bitwig", "bitwig-extension"]
+    },
+    {
+      "id": "bitwig",
+      "os": "macos",
+      "arch": "arm64",
+      "assets": ["bundle-macos-arm64", "firmware-bitwig", "bitwig-extension"]
+    },
+    {
+      "id": "bitwig",
+      "os": "linux",
+      "arch": "x86_64",
+      "assets": ["bundle-linux-x86_64", "firmware-bitwig", "bitwig-extension"]
     }
   ],
   "pages": {

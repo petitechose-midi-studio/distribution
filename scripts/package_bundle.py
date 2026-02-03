@@ -38,7 +38,7 @@ def main() -> int:
     ap.add_argument(
         "--oc-bridge-config",
         required=True,
-        help="Path to oc-bridge config directory (will be zipped under bridge/config)",
+        help="Path to oc-bridge config directory (will be zipped under bin/config)",
     )
     args = ap.parse_args()
 
@@ -52,7 +52,9 @@ def main() -> int:
     with zipfile.ZipFile(out, "w") as zf:
         _add_file(zf, oc_bridge, f"bin/{oc_bridge.name}")
         _add_file(zf, loader, f"bin/{loader.name}")
-        _add_tree(zf, oc_cfg, "bridge/config")
+        # oc-bridge discovers config next to the executable.
+        # The bundle must ship config under bin/config/**.
+        _add_tree(zf, oc_cfg, "bin/config")
 
     return 0
 
