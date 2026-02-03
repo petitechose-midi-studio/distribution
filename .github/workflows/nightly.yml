@@ -54,10 +54,78 @@ jobs:
           name: nightly-release-spec
           path: out/release-spec.json
 
-  build_bundles:
-    name: Build bundles (${{ matrix.bundle_os }}-${{ matrix.arch }})
+  plan:
+    name: Plan (reuse vs build)
+    runs-on: ubuntu-latest
     needs: [select_spec]
     if: needs.select_spec.outputs.should_publish == '1'
+    outputs:
+      build_bundles: ${{ steps.flags.outputs.build_bundles }}
+      build_firmware_default: ${{ steps.flags.outputs.build_firmware_default }}
+      build_firmware_bitwig: ${{ steps.flags.outputs.build_firmware_bitwig }}
+      build_bitwig_extension: ${{ steps.flags.outputs.build_bitwig_extension }}
+
+    steps:
+      - name: Checkout distribution (with tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release spec
+        uses: actions/download-artifact@v4
+        with:
+          name: nightly-release-spec
+          path: spec
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compute reuse plan
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Public key for nightly (not secret).
+          # Keep in sync with the key embedded in ms-manager.
+          MS_DIST_ED25519_PK: voOksaS+NoUkEy9c8YunbTwPnb1dlXCyEJ9Yy07233A=
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python scripts/build_manifest_with_reuse.py plan \
+            --spec spec/release-spec.json \
+            --out out/reuse-plan.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --workspace-root .
+
+      - name: Export plan flags
+        id: flags
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          p = json.load(open('out/reuse-plan.json', 'r', encoding='utf-8'))
+          b = p.get('build', {})
+          def flag(key: str) -> int:
+              return 1 if b.get(key) is True else 0
+          print(f"build_bundles={flag('bundles')}")
+          print(f"build_firmware_default={flag('firmware_default')}")
+          print(f"build_firmware_bitwig={flag('firmware_bitwig')}")
+          print(f"build_bitwig_extension={flag('bitwig_extension')}")
+          PY
+
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: reuse-plan
+          path: out/reuse-plan.json
+
+  build_bundles:
+    name: Build bundles (${{ matrix.bundle_os }}-${{ matrix.arch }})
+    needs: [select_spec, plan]
+    if: needs.select_spec.outputs.should_publish == '1' && needs.plan.outputs.build_bundles == '1'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -186,8 +254,14 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: [select_spec, build_bundles]
-    if: needs.select_spec.outputs.should_publish == '1'
+    needs: [select_spec, plan, build_bundles, build_integrations]
+    if: >-
+      ${{
+        needs.select_spec.outputs.should_publish == '1' &&
+        needs.plan.result == 'success' &&
+        (needs.build_bundles.result == 'success' || needs.build_bundles.result == 'skipped') &&
+        (needs.build_integrations.result == 'success' || needs.build_integrations.result == 'skipped')
+      }}
     environment: nightly
     permissions:
       contents: write
@@ -211,7 +285,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist_flat
-          find dist -maxdepth 3 -type f -name '*.zip' -print -exec cp '{}' dist_flat/ \;
+          find dist -maxdepth 5 -type f \( -name '*.zip' -o -name '*.hex' -o -name '*.bwextension' \) -print -exec cp '{}' dist_flat/ \;
+          ls -la dist_flat || true
+
+      - name: Locate reuse plan
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import glob
+          paths = glob.glob('dist/**/reuse-plan.json', recursive=True)
+          if not paths:
+            raise SystemExit('reuse-plan.json not found in downloaded artifacts')
+          print(f"path={paths[0]}")
+          PY
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -219,11 +307,15 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build manifest
+      - name: Build manifest (with reuse)
         shell: bash
         run: |
           set -euo pipefail
-          cargo run -p ms-dist-manifest -- build --spec spec/release-spec.json --dist dist_flat --out manifest.json
+          python scripts/build_manifest_with_reuse.py build \
+            --spec spec/release-spec.json \
+            --dist dist_flat \
+            --plan "${{ steps.plan.outputs.path }}" \
+            --out manifest.json
 
       - name: Sign manifest (nightly)
         shell: bash
@@ -239,10 +331,132 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          ASSETS=(dist_flat/*.zip dist_flat/*.hex dist_flat/*.bwextension)
           gh release create "${{ needs.select_spec.outputs.tag }}" \
-            dist_flat/*.zip \
+            "${ASSETS[@]}" \
             manifest.json manifest.json.sig \
             --title "${{ needs.select_spec.outputs.tag }}" \
             --notes "channel=nightly" \
             --prerelease \
             --repo "${GITHUB_REPOSITORY}"
+
+  build_integrations:
+    name: Build firmware + Bitwig extension
+    needs: [plan, select_spec]
+    if: >-
+      ${{
+        needs.select_spec.outputs.should_publish == '1' &&
+        (
+          needs.plan.outputs.build_firmware_default == '1' ||
+          needs.plan.outputs.build_firmware_bitwig == '1' ||
+          needs.plan.outputs.build_bitwig_extension == '1'
+        )
+      }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout distribution
+        uses: actions/checkout@v4
+
+      - name: Download release spec
+        uses: actions/download-artifact@v4
+        with:
+          name: nightly-release-spec
+          path: spec
+
+      - name: Read release spec
+        id: spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          spec = json.load(open('spec/release-spec.json', 'r', encoding='utf-8'))
+          repos = {r['id']: r['sha'] for r in spec.get('repos', [])}
+          def get(repo_id: str) -> str:
+              sha = repos.get(repo_id)
+              if not isinstance(sha, str) or len(sha) != 40:
+                  raise SystemExit(f"missing/invalid sha for {repo_id}: {sha!r}")
+              return sha
+          print(f"core_sha={get('core')}")
+          print(f"bitwig_sha={get('plugin-bitwig')}")
+          PY
+
+      - name: Checkout core
+        if: needs.plan.outputs.build_firmware_default == '1' || needs.plan.outputs.build_firmware_bitwig == '1'
+        uses: actions/checkout@v4
+        with:
+          repository: petitechose-midi-studio/core
+          ref: ${{ steps.spec.outputs.core_sha }}
+          path: src/midi-studio/core
+
+      - name: Checkout plugin-bitwig
+        if: needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
+        uses: actions/checkout@v4
+        with:
+          repository: petitechose-midi-studio/plugin-bitwig
+          ref: ${{ steps.spec.outputs.bitwig_sha }}
+          path: src/midi-studio/plugin-bitwig
+
+      - name: Install PlatformIO
+        if: needs.plan.outputs.build_firmware_default == '1' || needs.plan.outputs.build_firmware_bitwig == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install platformio
+
+      - name: Build core firmware (default)
+        if: needs.plan.outputs.build_firmware_default == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m platformio run -e release
+        working-directory: src/midi-studio/core
+
+      - name: Build bitwig firmware
+        if: needs.plan.outputs.build_firmware_bitwig == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m platformio run -e release
+        working-directory: src/midi-studio/plugin-bitwig
+
+      - name: Install Java
+        if: needs.plan.outputs.build_bitwig_extension == '1'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build Bitwig extension
+        if: needs.plan.outputs.build_bitwig_extension == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn package -Pmanual -Dmaven.compiler.release=21
+        working-directory: src/midi-studio/plugin-bitwig/host
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [ "${{ needs.plan.outputs.build_firmware_default }}" = "1" ]; then
+            cp "src/midi-studio/core/.pio/build/release/firmware.hex" "dist/midi-studio-default-firmware.hex"
+          fi
+          if [ "${{ needs.plan.outputs.build_firmware_bitwig }}" = "1" ]; then
+            cp "src/midi-studio/plugin-bitwig/.pio/build/release/firmware.hex" "dist/midi-studio-bitwig-firmware.hex"
+          fi
+          if [ "${{ needs.plan.outputs.build_bitwig_extension }}" = "1" ]; then
+            cp "src/midi-studio/plugin-bitwig/host/target/midi_studio.bwextension" "dist/midi_studio.bwextension"
+          fi
+          ls -la dist
+
+      - name: Upload integrations
+        uses: actions/upload-artifact@v4
+        with:
+          name: midi-studio-integrations
+          path: dist
