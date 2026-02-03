@@ -109,6 +109,7 @@ class PrevAssetMeta:
     filename: str
     size: int
     sha256: str
+    url: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +155,12 @@ class ReusePlan:
             "prev": {
                 "repos": dict(self.prev.repos),
                 "assets": {
-                    k: {"filename": v.filename, "size": v.size, "sha256": v.sha256}
+                    k: {
+                        "filename": v.filename,
+                        "size": v.size,
+                        "sha256": v.sha256,
+                        **({"url": v.url} if v.url is not None else {}),
+                    }
                     for k, v in self.prev.assets.items()
                 },
             },
@@ -434,9 +440,10 @@ def _parse_prev_manifest(manifest_bytes: bytes) -> PrevManifest:
         filename = _as_str(a.get("filename"), f"prev.manifest.assets[{i}].filename")
         size = _as_int(a.get("size"), f"prev.manifest.assets[{i}].size")
         sha256 = _as_str(a.get("sha256"), f"prev.manifest.assets[{i}].sha256")
+        url = _opt_str(a.get("url"), f"prev.manifest.assets[{i}].url")
         if len(sha256) != 64 or not _is_hex(sha256):
             raise ValueError(f"prev.manifest.assets[{i}].sha256: expected 64 hex chars")
-        assets[aid] = PrevAssetMeta(filename=filename, size=size, sha256=sha256)
+        assets[aid] = PrevAssetMeta(filename=filename, size=size, sha256=sha256, url=url)
 
     return PrevManifest(repos=repos, assets=assets)
 
@@ -685,7 +692,8 @@ def _plan_from_file(path: Path) -> ReusePlan:
         filename = _as_str(meta.get("filename"), f"plan.prev.assets.{asset_id}.filename")
         size = _as_int(meta.get("size"), f"plan.prev.assets.{asset_id}.size")
         sha256 = _as_str(meta.get("sha256"), f"plan.prev.assets.{asset_id}.sha256")
-        prev_assets[asset_id] = PrevAssetMeta(filename=filename, size=size, sha256=sha256)
+        url = _opt_str(meta.get("url"), f"plan.prev.assets.{asset_id}.url")
+        prev_assets[asset_id] = PrevAssetMeta(filename=filename, size=size, sha256=sha256, url=url)
 
     reason = _as_str(obj.get("reason"), "plan.reason")
 
@@ -750,7 +758,10 @@ def _build_manifest(
             if prev_meta.filename == a.filename:
                 obj["size"] = prev_meta.size
                 obj["sha256"] = prev_meta.sha256
-                obj["url"] = asset_url(plan.prev_tag, a.filename)
+                if prev_meta.url is not None:
+                    obj["url"] = prev_meta.url
+                else:
+                    obj["url"] = asset_url(plan.prev_tag, a.filename)
                 assets_out.append(obj)
                 continue
 
