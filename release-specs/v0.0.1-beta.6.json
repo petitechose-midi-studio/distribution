@@ -1,0 +1,159 @@
+{
+  "schema": 1,
+  "channel": "beta",
+  "tag": "v0.0.1-beta.6",
+  "repos": [
+    {
+      "id": "loader",
+      "url": "https://github.com/petitechose-midi-studio/loader",
+      "ref": "main",
+      "sha": "bf751ab71a0dd4fabb22d61358c376ea579a611e",
+      "required_ci_workflow_file": ".github/workflows/ci.yml"
+    },
+    {
+      "id": "oc-bridge",
+      "url": "https://github.com/open-control/bridge",
+      "ref": "main",
+      "sha": "7ab5e5551302ec2c6a1d1bf30efa84caca40e3f8",
+      "required_ci_workflow_file": ".github/workflows/ci.yml"
+    },
+    {
+      "id": "core",
+      "url": "https://github.com/petitechose-midi-studio/core",
+      "ref": "main",
+      "sha": "b50204a6f7aa9bc0ded55f1ea59d53e5bfef1c89"
+    },
+    {
+      "id": "plugin-bitwig",
+      "url": "https://github.com/petitechose-midi-studio/plugin-bitwig",
+      "ref": "main",
+      "sha": "366345079bcafe4bdf3318bf33674877dc224633"
+    }
+  ],
+  "assets": [
+    {
+      "id": "bundle-windows-x86_64",
+      "kind": "bundle",
+      "os": "windows",
+      "arch": "x86_64",
+      "filename": "midi-studio-windows-x86_64-bundle.zip"
+    },
+    {
+      "id": "bundle-macos-x86_64",
+      "kind": "bundle",
+      "os": "macos",
+      "arch": "x86_64",
+      "filename": "midi-studio-macos-x86_64-bundle.zip"
+    },
+    {
+      "id": "bundle-macos-arm64",
+      "kind": "bundle",
+      "os": "macos",
+      "arch": "arm64",
+      "filename": "midi-studio-macos-arm64-bundle.zip"
+    },
+    {
+      "id": "bundle-linux-x86_64",
+      "kind": "bundle",
+      "os": "linux",
+      "arch": "x86_64",
+      "filename": "midi-studio-linux-x86_64-bundle.zip"
+    },
+    {
+      "id": "firmware-default",
+      "kind": "firmware",
+      "filename": "midi-studio-default-firmware.hex"
+    },
+    {
+      "id": "firmware-bitwig",
+      "kind": "firmware",
+      "filename": "midi-studio-bitwig-firmware.hex"
+    },
+    {
+      "id": "bitwig-extension",
+      "kind": "bitwig-extension",
+      "filename": "midi_studio.bwextension"
+    }
+  ],
+  "install_sets": [
+    {
+      "id": "default",
+      "os": "windows",
+      "arch": "x86_64",
+      "assets": [
+        "bundle-windows-x86_64",
+        "firmware-default"
+      ]
+    },
+    {
+      "id": "default",
+      "os": "macos",
+      "arch": "x86_64",
+      "assets": [
+        "bundle-macos-x86_64",
+        "firmware-default"
+      ]
+    },
+    {
+      "id": "default",
+      "os": "macos",
+      "arch": "arm64",
+      "assets": [
+        "bundle-macos-arm64",
+        "firmware-default"
+      ]
+    },
+    {
+      "id": "default",
+      "os": "linux",
+      "arch": "x86_64",
+      "assets": [
+        "bundle-linux-x86_64",
+        "firmware-default"
+      ]
+    },
+    {
+      "id": "bitwig",
+      "os": "windows",
+      "arch": "x86_64",
+      "assets": [
+        "bundle-windows-x86_64",
+        "firmware-bitwig",
+        "bitwig-extension"
+      ]
+    },
+    {
+      "id": "bitwig",
+      "os": "macos",
+      "arch": "x86_64",
+      "assets": [
+        "bundle-macos-x86_64",
+        "firmware-bitwig",
+        "bitwig-extension"
+      ]
+    },
+    {
+      "id": "bitwig",
+      "os": "macos",
+      "arch": "arm64",
+      "assets": [
+        "bundle-macos-arm64",
+        "firmware-bitwig",
+        "bitwig-extension"
+      ]
+    },
+    {
+      "id": "bitwig",
+      "os": "linux",
+      "arch": "x86_64",
+      "assets": [
+        "bundle-linux-x86_64",
+        "firmware-bitwig",
+        "bitwig-extension"
+      ]
+    }
+  ],
+  "pages": {
+    "demo_url": "https://petitechose-midi-studio.github.io/distribution/demos/beta/"
+  }
+}
