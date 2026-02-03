@@ -318,7 +318,7 @@ def _http_get_json(url: str, *, token: str | None) -> object:
 
 def _http_get_bytes(url: str) -> bytes:
     req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=120) as r:
         return r.read()
 
 
@@ -337,6 +337,11 @@ def _select_prev_tag(*, channel: str, current_tag: str, releases: list[JsonObjec
     for r in releases:
         tag = r.get("tag_name")
         if not isinstance(tag, str) or not tag or tag == current_tag:
+            continue
+        # Ignore drafts (they may exist if a previous publish attempt failed).
+        draft_any = r.get("draft")
+        draft = bool(draft_any is True)
+        if draft:
             continue
         prerelease_any = r.get("prerelease")
         prerelease = bool(prerelease_any is True)
@@ -747,6 +752,17 @@ def _build_manifest(
         if a.arch is not None:
             obj["arch"] = a.arch
 
+        # Prefer a local file if present.
+        # This enables a "copy reuse" mode (e.g. stable/beta) where unchanged assets
+        # are downloaded from a previous tag and re-uploaded to the current tag,
+        # while nightly can keep URL reuse by simply omitting the file.
+        p = dist_dir / a.filename
+        if p.exists() and p.is_file():
+            obj["size"] = p.stat().st_size
+            obj["sha256"] = _sha256_file(p)
+            assets_out.append(obj)
+            continue
+
         # Reuse if allowed.
         if (
             a.group != AssetGroup.other
@@ -765,13 +781,7 @@ def _build_manifest(
                 assets_out.append(obj)
                 continue
 
-        # Build path.
-        p = dist_dir / a.filename
-        if not p.exists() or not p.is_file():
-            raise FileNotFoundError(f"missing asset file: {p}")
-        obj["size"] = p.stat().st_size
-        obj["sha256"] = _sha256_file(p)
-        assets_out.append(obj)
+        raise FileNotFoundError(f"missing asset file: {p}")
 
     install_sets_out: list[JsonObject] = []
     for s in spec.install_sets:
@@ -796,6 +806,89 @@ def _build_manifest(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def _materialize_reused_assets(*, spec: ReleaseSpec, dist_dir: Path, plan: ReusePlan) -> int:
+    """Download reused assets into dist_dir (copy reuse).
+
+    This is intended for channels where we want each tag to be self-contained
+    (stable/beta), while still skipping rebuilds.
+    """
+
+    dist_dir.mkdir(parents=True, exist_ok=True)
+
+    missing: list[str] = []
+    downloaded: list[str] = []
+
+    def url_for(asset_id: str, filename: str) -> str | None:
+        meta = plan.prev.assets.get(asset_id)
+        if meta is None:
+            return None
+        if meta.url is not None:
+            return meta.url
+        if plan.prev_tag is None:
+            return None
+        return (
+            f"https://github.com/{plan.repo}/releases/download/"
+            f"{urllib.parse.quote(plan.prev_tag)}/{urllib.parse.quote(filename)}"
+        )
+
+    for a in spec.assets:
+        p = dist_dir / a.filename
+        if p.exists() and p.is_file():
+            continue
+
+        # Only materialize assets that are explicitly reusable.
+        if (
+            a.group == AssetGroup.other
+            or plan.prev_tag is None
+            or not plan.reuse.get(a.group, False)
+            or a.id not in plan.prev.assets
+        ):
+            missing.append(a.filename)
+            continue
+
+        meta = plan.prev.assets[a.id]
+        if meta.filename != a.filename:
+            missing.append(a.filename)
+            continue
+
+        url = url_for(a.id, a.filename)
+        if url is None:
+            missing.append(a.filename)
+            continue
+
+        data = _http_get_bytes(url)
+        got_size = len(data)
+        got_sha256 = _sha256_bytes(data)
+
+        if got_size != meta.size:
+            raise ValueError(
+                f"downloaded size mismatch for {a.filename}: expected {meta.size} got {got_size}"
+            )
+        if got_sha256 != meta.sha256:
+            raise ValueError(
+                f"downloaded sha256 mismatch for {a.filename}: expected {meta.sha256} got {got_sha256}"
+            )
+
+        tmp = p.with_name(p.name + ".part")
+        tmp.write_bytes(data)
+        os.replace(tmp, p)
+        downloaded.append(a.filename)
+        print(f"materialize: downloaded {a.filename} from {url}")
+
+    if missing:
+        missing_preview = ", ".join(missing[:10])
+        more = "" if len(missing) <= 10 else f" (+{len(missing) - 10} more)"
+        raise FileNotFoundError(
+            f"materialize: missing assets (not reusable or missing prev meta): {missing_preview}{more}"
+        )
+
+    if not downloaded:
+        print("materialize: no assets needed")
+    else:
+        print(f"materialize: downloaded {len(downloaded)} asset(s)")
+    return len(downloaded)
 
 
 def main() -> int:
@@ -833,6 +926,14 @@ def main() -> int:
     ap_build.add_argument("--dist", required=True, help="Directory containing built assets")
     ap_build.add_argument("--out", required=True, help="Output manifest.json path")
     ap_build.add_argument("--plan", required=True, help="Path to plan JSON")
+
+    ap_mat = sub.add_parser(
+        "materialize",
+        help="Download reused assets into dist/ (copy reuse for self-contained tags)",
+    )
+    ap_mat.add_argument("--spec", required=True, help="Path to release spec JSON")
+    ap_mat.add_argument("--dist", required=True, help="Directory to write assets into")
+    ap_mat.add_argument("--plan", required=True, help="Path to plan JSON")
 
     args = ap.parse_args()
 
@@ -877,6 +978,13 @@ def main() -> int:
             plan=plan,
             out_path=Path(args.out),
         )
+        return 0
+
+    if args.cmd == "materialize":
+        spec_obj = _read_json_object(Path(args.spec), "spec")
+        spec = _parse_release_spec(spec_obj)
+        plan = _plan_from_file(Path(args.plan))
+        _materialize_reused_assets(spec=spec, dist_dir=Path(args.dist), plan=plan)
         return 0
 
     return 2
