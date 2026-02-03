@@ -20,9 +20,10 @@ from typing import cast
 # If any of these change since the previous tag, we force a full rebuild (no reuse).
 RECIPE_PATHS: tuple[str, ...] = (
     "scripts/package_bundle.py",
+    "scripts/build_manifest_with_reuse.py",
     ".github/workflows/publish.yml",
     ".github/workflows/nightly.yml",
-    "tools/ms-dist-manifest/Cargo.lock",
+    "Cargo.lock",
 )
 
 
