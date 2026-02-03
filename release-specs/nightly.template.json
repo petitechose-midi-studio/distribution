@@ -21,13 +21,15 @@
       "id": "core",
       "url": "https://github.com/petitechose-midi-studio/core",
       "ref": "main",
-      "sha": "0000000000000000000000000000000000000000"
+      "sha": "0000000000000000000000000000000000000000",
+      "required_ci_workflow_file": ".github/workflows/ci.yml"
     },
     {
       "id": "plugin-bitwig",
       "url": "https://github.com/petitechose-midi-studio/plugin-bitwig",
       "ref": "main",
-      "sha": "0000000000000000000000000000000000000000"
+      "sha": "0000000000000000000000000000000000000000",
+      "required_ci_workflow_file": ".github/workflows/ci.yml"
     }
   ],
   "assets": [
