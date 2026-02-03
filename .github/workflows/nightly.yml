@@ -3,7 +3,12 @@ name: Nightly
 on:
   schedule:
     - cron: "17 3 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tag_override:
+        description: Optional tag override for manual runs (avoid nightly-YYYY-MM-DD to not interfere with real nightlies)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,18 +28,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "tag=nightly-$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          TAG="${{ inputs.tag_override }}"
+          if [ -z "$TAG" ]; then
+            TAG="nightly-$(date -u +%Y-%m-%d)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Select latest green SHAs
         id: select
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          TAG="${{ steps.tag.outputs.tag }}"
+          # Idempotency: if this tag already exists, do nothing.
+          if gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "should_publish=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           mkdir -p out
           set +e
-          python scripts/select_latest_green.py --template release-specs/nightly.template.json --out out/release-spec.json --tag "${{ steps.tag.outputs.tag }}"
+          python scripts/select_latest_green.py --template release-specs/nightly.template.json --out out/release-spec.json --tag "$TAG"
           RC=$?
           set -e
 
@@ -260,6 +278,12 @@ jobs:
         always() &&
         needs.select_spec.outputs.should_publish == '1' &&
         needs.plan.result == 'success' &&
+        (
+          needs.plan.outputs.build_bundles == '1' ||
+          needs.plan.outputs.build_firmware_default == '1' ||
+          needs.plan.outputs.build_firmware_bitwig == '1' ||
+          needs.plan.outputs.build_bitwig_extension == '1'
+        ) &&
         (needs.build_bundles.result == 'success' || needs.build_bundles.result == 'skipped') &&
         (needs.build_integrations.result == 'success' || needs.build_integrations.result == 'skipped')
       }}
@@ -326,6 +350,21 @@ jobs:
           set -euo pipefail
           cargo run -p ms-dist-manifest -- sign --in manifest.json --out manifest.json.sig
 
+      - name: Verify manifest signature
+        shell: bash
+        env:
+          MS_DIST_ED25519_SK: ${{ secrets.MS_DIST_ED25519_SK_NIGHTLY }}
+        run: |
+          set -euo pipefail
+          PK=$(cargo run -p ms-dist-manifest -- pubkey)
+          MS_DIST_ED25519_PK="$PK" cargo run -p ms-dist-manifest -- verify --in manifest.json --sig manifest.json.sig
+
+      - name: Verify manifest assets (download reused URLs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_manifest_assets.py --manifest manifest.json --assets-dir dist_flat --fetch-urls
+
       - name: Create GitHub Release
         shell: bash
         env:
@@ -340,6 +379,7 @@ jobs:
             --title "${{ needs.select_spec.outputs.tag }}" \
             --notes "channel=nightly" \
             --prerelease \
+            --target "${GITHUB_SHA}" \
             --repo "${GITHUB_REPOSITORY}"
 
   build_integrations:
