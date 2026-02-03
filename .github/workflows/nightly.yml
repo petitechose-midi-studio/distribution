@@ -257,6 +257,7 @@ jobs:
     needs: [select_spec, plan, build_bundles, build_integrations]
     if: >-
       ${{
+        always() &&
         needs.select_spec.outputs.should_publish == '1' &&
         needs.plan.result == 'success' &&
         (needs.build_bundles.result == 'success' || needs.build_bundles.result == 'skipped') &&
