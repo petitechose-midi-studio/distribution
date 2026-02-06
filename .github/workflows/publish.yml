@@ -1,5 +1,7 @@
 name: Publish
 
+run-name: Publish ${{ inputs.tag }} / ${{ inputs.channel }} / ${{ inputs.request_id }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +19,11 @@ on:
       spec_path:
         description: Path to release spec JSON in this repo
         required: true
+        type: string
+      request_id:
+        description: Optional dispatch correlation id
+        required: false
+        default: ""
         type: string
 
 concurrency:
