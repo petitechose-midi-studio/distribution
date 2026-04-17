@@ -25,7 +25,7 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Checkout distribution
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Compute tag
         id: tag
@@ -71,7 +71,7 @@ jobs:
 
       - name: Upload spec
         if: steps.select.outputs.should_publish == '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-release-spec
           path: out/release-spec.json
@@ -89,12 +89,12 @@ jobs:
 
     steps:
       - name: Checkout distribution (with tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Download release spec
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nightly-release-spec
           path: spec
@@ -139,7 +139,7 @@ jobs:
           PY
 
       - name: Upload plan
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-plan
           path: out/reuse-plan.json
@@ -176,10 +176,10 @@ jobs:
 
     steps:
       - name: Checkout distribution
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download release spec
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nightly-release-spec
           path: spec
@@ -199,14 +199,14 @@ jobs:
           PY
 
       - name: Checkout loader
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: petitechose-midi-studio/loader
           ref: ${{ steps.spec.outputs.loader_sha }}
           path: src/loader
 
       - name: Checkout oc-bridge
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: open-control/bridge
           ref: ${{ steps.spec.outputs.bridge_sha }}
@@ -269,7 +269,7 @@ jobs:
           python scripts/package_bundle.py --out "$OUT" --loader "$LOADER" --oc-bridge "$BRIDGE" --oc-bridge-config "src/oc-bridge/config"
 
       - name: Upload bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle
           path: dist/midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle.zip
@@ -296,15 +296,15 @@ jobs:
       contents: write
     steps:
       - name: Checkout distribution
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download bundles
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
       - name: Download release spec
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nightly-release-spec
           path: spec
@@ -402,10 +402,10 @@ jobs:
 
     steps:
       - name: Checkout distribution
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download release spec
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nightly-release-spec
           path: spec
@@ -430,7 +430,7 @@ jobs:
 
       - name: Checkout core
         if: needs.plan.outputs.build_firmware_default == '1' || needs.plan.outputs.build_firmware_bitwig == '1'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: petitechose-midi-studio/core
           ref: ${{ steps.spec.outputs.core_sha }}
@@ -438,7 +438,7 @@ jobs:
 
       - name: Checkout plugin-bitwig
         if: needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: petitechose-midi-studio/plugin-bitwig
           ref: ${{ steps.spec.outputs.bitwig_sha }}
@@ -501,7 +501,7 @@ jobs:
           ls -la dist
 
       - name: Upload integrations
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: midi-studio-integrations
           path: dist
