@@ -460,12 +460,40 @@ jobs:
           PY
 
       - name: Checkout core
-        if: needs.plan.outputs.build_firmware_default == '1' || needs.plan.outputs.build_firmware_bitwig == '1'
+        if: needs.plan.outputs.build_firmware_default == '1' || needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
         uses: actions/checkout@v6
         with:
           repository: petitechose-midi-studio/core
           ref: ${{ steps.spec.outputs.core_sha }}
           path: src/midi-studio/core
+
+      - name: Resolve ui SHA from core release pin
+        id: ui
+        if: needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
+          from pathlib import Path
+
+          text = Path("src/midi-studio/core/platformio.ini").read_text(encoding="utf-8")
+          match = re.search(
+              r"(?m)^\s*ms-ui=https://github\.com/petitechose-midi-studio/ui\.git#([0-9a-f]{40})\s*$",
+              text,
+          )
+          if match is None:
+              raise SystemExit("missing pinned ms-ui dependency in core/platformio.ini")
+          print(f"ui_sha={match.group(1)}")
+          PY
+
+      - name: Checkout ui
+        if: needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ui
+          ref: ${{ steps.ui.outputs.ui_sha }}
+          path: src/midi-studio/ui
 
       - name: Checkout plugin-bitwig
         if: needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
