@@ -31,6 +31,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -51,9 +52,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Compute reuse plan
         shell: bash
@@ -174,9 +172,6 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Install Linux system deps
         if: matrix.bundle_os == 'linux'
         shell: bash
@@ -234,13 +229,15 @@ jobs:
   assemble:
     name: Assemble dist (copy reuse) + validate
     runs-on: ubuntu-latest
-    needs: [plan, build_bundles, build_integrations]
+    needs: [plan, build_bundles, build_core_firmware, build_bitwig_firmware, build_bitwig_extension]
     if: >-
       ${{
         always() &&
         needs.plan.result == 'success' &&
         (needs.build_bundles.result == 'success' || needs.build_bundles.result == 'skipped') &&
-        (needs.build_integrations.result == 'success' || needs.build_integrations.result == 'skipped')
+        (needs.build_core_firmware.result == 'success' || needs.build_core_firmware.result == 'skipped') &&
+        (needs.build_bitwig_firmware.result == 'success' || needs.build_bitwig_firmware.result == 'skipped') &&
+        (needs.build_bitwig_extension.result == 'success' || needs.build_bitwig_extension.result == 'skipped')
       }}
 
     steps:
@@ -248,9 +245,13 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: dist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download "${{ github.run_id }}" --repo "${GITHUB_REPOSITORY}" --dir dist
 
       - name: Flatten artifacts
         shell: bash
@@ -325,6 +326,7 @@ jobs:
       }}
     environment: release
     permissions:
+      actions: read
       contents: write
 
     steps:
@@ -332,16 +334,16 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download assembled dist
-        uses: actions/download-artifact@v8
-        with:
-          name: assembled-dist
-          path: assembled
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p assembled
+          gh run download "${{ github.run_id }}" --repo "${GITHUB_REPOSITORY}" --dir assembled --name assembled-dist
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Build manifest (with reuse)
         shell: bash
@@ -425,15 +427,73 @@ jobs:
           set -euo pipefail
           gh release edit "${{ inputs.tag }}" --draft=false --repo "${GITHUB_REPOSITORY}"
 
-  build_integrations:
-    name: Build firmware + Bitwig extension
+  build_core_firmware:
+    name: Build core firmware (default)
     needs: [plan]
-    if: >-
-      ${{
-        needs.plan.outputs.build_firmware_default == '1' ||
-        needs.plan.outputs.build_firmware_bitwig == '1' ||
-        needs.plan.outputs.build_bitwig_extension == '1'
-      }}
+    if: needs.plan.outputs.build_firmware_default == '1'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout distribution
+        uses: actions/checkout@v6
+
+      - name: Read release spec
+        id: spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "${{ inputs.spec_path }}"
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          spec = json.load(open("${{ inputs.spec_path }}", "r", encoding="utf-8"))
+          repos = {r["id"]: r["sha"] for r in spec.get("repos", [])}
+          def get(repo_id: str) -> str:
+              sha = repos.get(repo_id)
+              if not isinstance(sha, str) or len(sha) != 40:
+                  raise SystemExit(f"missing/invalid sha for {repo_id}: {sha!r}")
+              return sha
+          print(f"core_sha={get('core')}")
+          PY
+
+      - name: Checkout core
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/core
+          ref: ${{ steps.spec.outputs.core_sha }}
+          path: src/midi-studio/core
+
+      - name: Install PlatformIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install platformio
+
+      - name: Build core firmware (default)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m platformio run -e release
+        working-directory: src/midi-studio/core
+
+      - name: Collect artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "src/midi-studio/core/.pio/build/release/firmware.hex" "dist/midi-studio-default-firmware.hex"
+          ls -la dist
+
+      - name: Upload core firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: midi-studio-default-firmware
+          path: dist/midi-studio-default-firmware.hex
+
+  build_bitwig_firmware:
+    name: Build bitwig firmware
+    needs: [plan]
+    if: needs.plan.outputs.build_firmware_bitwig == '1'
     runs-on: ubuntu-latest
 
     steps:
@@ -460,7 +520,6 @@ jobs:
           PY
 
       - name: Checkout core
-        if: needs.plan.outputs.build_firmware_default == '1' || needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
         uses: actions/checkout@v6
         with:
           repository: petitechose-midi-studio/core
@@ -469,7 +528,6 @@ jobs:
 
       - name: Resolve ui SHA from core release pin
         id: ui
-        if: needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
         shell: bash
         run: |
           set -euo pipefail
@@ -488,7 +546,6 @@ jobs:
           PY
 
       - name: Checkout ui
-        if: needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
         uses: actions/checkout@v6
         with:
           repository: petitechose-midi-studio/ui
@@ -496,7 +553,6 @@ jobs:
           path: src/midi-studio/ui
 
       - name: Checkout plugin-bitwig
-        if: needs.plan.outputs.build_firmware_bitwig == '1' || needs.plan.outputs.build_bitwig_extension == '1'
         uses: actions/checkout@v6
         with:
           repository: petitechose-midi-studio/plugin-bitwig
@@ -504,63 +560,90 @@ jobs:
           path: src/midi-studio/plugin-bitwig
 
       - name: Install PlatformIO
-        if: needs.plan.outputs.build_firmware_default == '1' || needs.plan.outputs.build_firmware_bitwig == '1'
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install platformio
 
-      - name: Build core firmware (default)
-        if: needs.plan.outputs.build_firmware_default == '1'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m platformio run -e release
-        working-directory: src/midi-studio/core
-
       - name: Build bitwig firmware
-        if: needs.plan.outputs.build_firmware_bitwig == '1'
         shell: bash
         run: |
           set -euo pipefail
           python -m platformio run -e release
         working-directory: src/midi-studio/plugin-bitwig
 
+      - name: Collect artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "src/midi-studio/plugin-bitwig/.pio/build/release/firmware.hex" "dist/midi-studio-bitwig-firmware.hex"
+          ls -la dist
+
+      - name: Upload bitwig firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: midi-studio-bitwig-firmware
+          path: dist/midi-studio-bitwig-firmware.hex
+
+  build_bitwig_extension:
+    name: Build Bitwig extension
+    needs: [plan]
+    if: needs.plan.outputs.build_bitwig_extension == '1'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout distribution
+        uses: actions/checkout@v6
+
+      - name: Read release spec
+        id: spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "${{ inputs.spec_path }}"
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          spec = json.load(open("${{ inputs.spec_path }}", "r", encoding="utf-8"))
+          repos = {r["id"]: r["sha"] for r in spec.get("repos", [])}
+          sha = repos.get("plugin-bitwig")
+          if not isinstance(sha, str) or len(sha) != 40:
+              raise SystemExit(f"missing/invalid sha for plugin-bitwig: {sha!r}")
+          print(f"bitwig_sha={sha}")
+          PY
+
+      - name: Checkout plugin-bitwig
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/plugin-bitwig
+          ref: ${{ steps.spec.outputs.bitwig_sha }}
+          path: src/midi-studio/plugin-bitwig
+
       - name: Install Java
-        if: needs.plan.outputs.build_bitwig_extension == '1'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
 
       - name: Build Bitwig extension
-        if: needs.plan.outputs.build_bitwig_extension == '1'
         shell: bash
         run: |
           set -euo pipefail
           mvn package -Pmanual -Dmaven.compiler.release=21
         working-directory: src/midi-studio/plugin-bitwig/host
 
-      - name: Collect artifacts
+      - name: Collect artifact
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          if [ "${{ needs.plan.outputs.build_firmware_default }}" = "1" ]; then
-            cp "src/midi-studio/core/.pio/build/release/firmware.hex" "dist/midi-studio-default-firmware.hex"
-          fi
-          if [ "${{ needs.plan.outputs.build_firmware_bitwig }}" = "1" ]; then
-            cp "src/midi-studio/plugin-bitwig/.pio/build/release/firmware.hex" "dist/midi-studio-bitwig-firmware.hex"
-          fi
-          if [ "${{ needs.plan.outputs.build_bitwig_extension }}" = "1" ]; then
-            cp "src/midi-studio/plugin-bitwig/host/target/midi_studio.bwextension" "dist/midi_studio.bwextension"
-          fi
+          cp "src/midi-studio/plugin-bitwig/host/target/midi_studio.bwextension" "dist/midi_studio.bwextension"
           ls -la dist
 
-      - name: Upload integrations
+      - name: Upload bitwig extension
         uses: actions/upload-artifact@v7
         with:
-          name: midi-studio-integrations
-          path: dist
+          name: midi-studio-bitwig-extension
+          path: dist/midi_studio.bwextension

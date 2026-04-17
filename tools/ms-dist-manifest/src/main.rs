@@ -91,11 +91,7 @@ struct ReleaseSpec {
 struct SpecRepo {
     id: String,
     url: String,
-    #[serde(rename = "ref")]
-    git_ref: String,
     sha: String,
-    #[serde(default)]
-    required_ci_workflow_file: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
