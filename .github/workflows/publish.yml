@@ -65,93 +65,9 @@ jobs:
           path: dispatch/marker.json
           retention-days: 1
 
-  plan:
-    name: Plan (reuse vs build)
+  build_dist:
+    name: Materialize dist + validate
     runs-on: ubuntu-latest
-    outputs:
-      build_bundles: ${{ steps.flags.outputs.build_bundles }}
-      build_firmware_default: ${{ steps.flags.outputs.build_firmware_default }}
-      build_firmware_bitwig: ${{ steps.flags.outputs.build_firmware_bitwig }}
-      build_bitwig_extension: ${{ steps.flags.outputs.build_bitwig_extension }}
-
-    steps:
-      - name: Checkout distribution (with tags)
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Compute reuse plan
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          # Public key for stable/beta (not secret).
-          # Keep in sync with the key embedded in ms-manager.
-          MS_DIST_ED25519_PK: 2rHtM99leFGTpjZ8fZHNCdGXlEKmAw6hEyaat1uGO3M=
-        run: |
-          set -euo pipefail
-          mkdir -p out
-          python scripts/build_manifest_with_reuse.py plan \
-            --spec "${{ inputs.spec_path }}" \
-            --out out/reuse-plan.json \
-            --repo "${GITHUB_REPOSITORY}" \
-            --workspace-root .
-
-      - name: Export plan flags
-        id: flags
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          p = json.load(open('out/reuse-plan.json', 'r', encoding='utf-8'))
-          b = p.get('build', {})
-          def flag(key: str) -> int:
-              return 1 if b.get(key) is True else 0
-          print(f"build_bundles={flag('bundles')}")
-          print(f"build_firmware_default={flag('firmware_default')}")
-          print(f"build_firmware_bitwig={flag('firmware_bitwig')}")
-          print(f"build_bitwig_extension={flag('bitwig_extension')}")
-          PY
-
-      - name: Upload plan
-        uses: actions/upload-artifact@v7
-        with:
-          name: reuse-plan
-          path: out/reuse-plan.json
-
-  build_bundles:
-    name: Package bundles (${{ matrix.bundle_os }}-${{ matrix.arch }})
-    needs: [plan]
-    if: needs.plan.outputs.build_bundles == '1'
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            bundle_os: windows
-            arch: x86_64
-            loader_filename: midi-studio-loader-windows-x86_64.exe
-            bridge_filename: oc-bridge-windows-x86_64.exe
-          - runner: ubuntu-latest
-            bundle_os: linux
-            arch: x86_64
-            loader_filename: midi-studio-loader-linux-x86_64
-            bridge_filename: oc-bridge-linux-x86_64
-          - runner: macos-15-intel
-            bundle_os: macos
-            arch: x86_64
-            loader_filename: midi-studio-loader-macos-x86_64
-            bridge_filename: oc-bridge-macos-x86_64
-          - runner: macos-latest
-            bundle_os: macos
-            arch: arm64
-            loader_filename: midi-studio-loader-macos-arm64
-            bridge_filename: oc-bridge-macos-arm64
-
 
     steps:
       - name: Checkout distribution
@@ -162,158 +78,113 @@ jobs:
         with:
           tooling-sha: ${{ inputs.tooling_sha }}
 
-      - name: Export spec inputs
-        id: spec
+      - name: Materialize firmware and extension candidates
         shell: bash
         run: |
           set -euo pipefail
+          declare -a targets=(
+            "core-default-firmware:midi-studio-default-firmware.hex"
+            "plugin-bitwig-firmware:midi-studio-bitwig-firmware.hex"
+            "plugin-bitwig-extension:midi_studio.bwextension"
+          )
           (
             cd workspace
-            uv run ms release content export-spec \
-              --spec "../${{ inputs.spec_path }}" \
-              --github-output "$GITHUB_OUTPUT" \
-              --repo-id loader \
-              --repo-id oc-bridge
+            for entry in "${targets[@]}"; do
+              target_id="${entry%%:*}"
+              asset_filename="${entry#*:}"
+              uv run ms release content fetch-candidate \
+                --spec "../${{ inputs.spec_path }}" \
+                --target-id "$target_id" \
+                --out-dir ../dist \
+                --asset-filename "$asset_filename"
+            done
           )
 
-      - name: Checkout oc-bridge config
-        uses: actions/checkout@v6
-        with:
-          repository: open-control/bridge
-          ref: ${{ steps.spec.outputs.repo_oc_bridge_sha }}
-          path: src/oc-bridge
-
-      - name: Materialize loader candidate
-        uses: ./.github/actions/materialize-content-candidate
-        with:
-          spec-path: ${{ inputs.spec_path }}
-          target-id: loader-binaries
-          out-dir: ../dist
-          asset-filename: ${{ matrix.loader_filename }}
-
-      - name: Materialize oc-bridge candidate
-        uses: ./.github/actions/materialize-content-candidate
-        with:
-          spec-path: ${{ inputs.spec_path }}
-          target-id: oc-bridge-binaries
-          out-dir: ../dist
-          asset-filename: ${{ matrix.bridge_filename }}
-
-      - name: Package bundle
+      - name: Materialize loader and oc-bridge candidates
         shell: bash
         run: |
           set -euo pipefail
-          LOADER="dist/${{ matrix.loader_filename }}"
-          BRIDGE="dist/${{ matrix.bridge_filename }}"
-          test -f "$LOADER"
-          test -f "$BRIDGE"
-          OUT="dist/midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle.zip"
-          python scripts/package_bundle.py --out "$OUT" --loader "$LOADER" --oc-bridge "$BRIDGE" --oc-bridge-config "src/oc-bridge/config"
+          declare -a targets=(
+            "loader-binaries:midi-studio-loader-windows-x86_64.exe"
+            "loader-binaries:midi-studio-loader-linux-x86_64"
+            "loader-binaries:midi-studio-loader-macos-x86_64"
+            "loader-binaries:midi-studio-loader-macos-arm64"
+            "oc-bridge-binaries:oc-bridge-windows-x86_64.exe"
+            "oc-bridge-binaries:oc-bridge-linux-x86_64"
+            "oc-bridge-binaries:oc-bridge-macos-x86_64"
+            "oc-bridge-binaries:oc-bridge-macos-arm64"
+            "oc-bridge-binaries:oc-bridge-config.zip"
+          )
+          (
+            cd workspace
+            for entry in "${targets[@]}"; do
+              target_id="${entry%%:*}"
+              asset_filename="${entry#*:}"
+              uv run ms release content fetch-candidate \
+                --spec "../${{ inputs.spec_path }}" \
+                --target-id "$target_id" \
+                --out-dir ../dist \
+                --asset-filename "$asset_filename"
+            done
+          )
 
-      - name: Upload bundle
-        uses: actions/upload-artifact@v7
-        with:
-          name: midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle
-          path: dist/midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle.zip
-
-  assemble:
-    name: Assemble dist (copy reuse) + validate
-    runs-on: ubuntu-latest
-    needs: [plan, build_bundles, build_core_firmware, build_bitwig_firmware, build_bitwig_extension]
-    if: >-
-      ${{
-        always() &&
-        needs.plan.result == 'success' &&
-        (needs.build_bundles.result == 'success' || needs.build_bundles.result == 'skipped') &&
-        (needs.build_core_firmware.result == 'success' || needs.build_core_firmware.result == 'skipped') &&
-        (needs.build_bitwig_firmware.result == 'success' || needs.build_bitwig_firmware.result == 'skipped') &&
-        (needs.build_bitwig_extension.result == 'success' || needs.build_bitwig_extension.result == 'skipped')
-      }}
-
-    steps:
-      - name: Checkout distribution
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          gh run download "${{ github.run_id }}" --repo "${GITHUB_REPOSITORY}" --dir dist
-
-      - name: Flatten artifacts
+      - name: Extract oc-bridge config
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist_flat
-          find dist -maxdepth 5 -type f \( -name '*.zip' -o -name '*.hex' -o -name '*.bwextension' \) -print -exec cp '{}' dist_flat/ \;
-          ls -la dist_flat || true
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
 
-      - name: Locate reuse plan
-        id: plan
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import glob
-          paths = glob.glob('dist/**/reuse-plan.json', recursive=True)
-          if not paths:
-            raise SystemExit('reuse-plan.json not found in downloaded artifacts')
-          print(f"path={paths[0]}")
+          archive = Path("dist/oc-bridge-config.zip")
+          out_dir = Path("dist/oc-bridge-config")
+          out_dir.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(archive, "r") as zf:
+              zf.extractall(out_dir)
           PY
 
-      - name: Copy reuse plan
+      - name: Package bundles
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p out
-          cp "${{ steps.plan.outputs.path }}" out/reuse-plan.json
-
-      - name: Materialize reused assets (copy reuse)
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/build_manifest_with_reuse.py materialize \
-            --spec "${{ inputs.spec_path }}" \
-            --dist dist_flat \
-            --plan out/reuse-plan.json
+          python scripts/package_bundle.py \
+            --out dist/midi-studio-windows-x86_64-bundle.zip \
+            --loader dist/midi-studio-loader-windows-x86_64.exe \
+            --oc-bridge dist/oc-bridge-windows-x86_64.exe \
+            --oc-bridge-config dist/oc-bridge-config
+          python scripts/package_bundle.py \
+            --out dist/midi-studio-linux-x86_64-bundle.zip \
+            --loader dist/midi-studio-loader-linux-x86_64 \
+            --oc-bridge dist/oc-bridge-linux-x86_64 \
+            --oc-bridge-config dist/oc-bridge-config
+          python scripts/package_bundle.py \
+            --out dist/midi-studio-macos-x86_64-bundle.zip \
+            --loader dist/midi-studio-loader-macos-x86_64 \
+            --oc-bridge dist/oc-bridge-macos-x86_64 \
+            --oc-bridge-config dist/oc-bridge-config
+          python scripts/package_bundle.py \
+            --out dist/midi-studio-macos-arm64-bundle.zip \
+            --loader dist/midi-studio-loader-macos-arm64 \
+            --oc-bridge dist/oc-bridge-macos-arm64 \
+            --oc-bridge-config dist/oc-bridge-config
 
       - name: Validate dist against spec
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/validate_dist.py --spec "${{ inputs.spec_path }}" --dist dist_flat
+          python scripts/validate_dist.py --spec "${{ inputs.spec_path }}" --dist dist
 
-      - name: Build manifest preview (with reuse)
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/build_manifest_with_reuse.py build \
-            --spec "${{ inputs.spec_path }}" \
-            --dist dist_flat \
-            --plan out/reuse-plan.json \
-            --out out/manifest.preview.json
-
-      - name: Upload assembled dist
+      - name: Upload dist
         uses: actions/upload-artifact@v7
         with:
-          name: assembled-dist
-          path: |
-            dist_flat
-            out/reuse-plan.json
-            out/manifest.preview.json
+          name: dist
+          path: dist
 
   release:
     name: Sign and publish release
     runs-on: ubuntu-latest
-    needs: [assemble]
-    if: >-
-      ${{
-        always() &&
-        needs.assemble.result == 'success'
-      }}
+    needs: [build_dist]
+    if: ${{ always() && needs.build_dist.result == 'success' }}
     environment: release
     permissions:
       actions: read
@@ -323,26 +194,31 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Download assembled dist
+      - name: Download dist
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p assembled
-          gh run download "${{ github.run_id }}" --repo "${GITHUB_REPOSITORY}" --dir assembled --name assembled-dist
+          gh run download "${{ github.run_id }}" --repo "${GITHUB_REPOSITORY}" --dir assembled --name dist
+
+      - name: Inspect assembled dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          find assembled -maxdepth 3 -type f | sort
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build manifest (with reuse)
+      - name: Build manifest
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/build_manifest_with_reuse.py build \
+          python scripts/build_manifest.py \
             --spec "${{ inputs.spec_path }}" \
-            --dist assembled/dist_flat \
-            --plan assembled/out/reuse-plan.json \
+            --dist assembled/dist \
             --out manifest.json
 
       - name: Sign manifest
@@ -383,7 +259,7 @@ jobs:
             NOTES_ARGS+=("--notes" "channel=${{ inputs.channel }}")
           fi
 
-          ASSETS=(assembled/dist_flat/*.zip assembled/dist_flat/*.hex assembled/dist_flat/*.bwextension)
+          ASSETS=(assembled/dist/*.zip assembled/dist/*.hex assembled/dist/*.bwextension)
           gh release create "${{ inputs.tag }}" \
             "${ASSETS[@]}" \
             manifest.json manifest.json.sig \
@@ -416,90 +292,3 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "${{ inputs.tag }}" --draft=false --repo "${GITHUB_REPOSITORY}"
-
-  build_core_firmware:
-    name: Fetch core firmware (default)
-    needs: [plan]
-    if: needs.plan.outputs.build_firmware_default == '1'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout distribution
-        uses: actions/checkout@v6
-
-      - name: Setup release workspace
-        uses: ./.github/actions/setup-release-workspace
-        with:
-          tooling-sha: ${{ inputs.tooling_sha }}
-
-      - name: Materialize core firmware candidate
-        uses: ./.github/actions/materialize-content-candidate
-        with:
-          spec-path: ${{ inputs.spec_path }}
-          target-id: core-default-firmware
-          out-dir: ../dist
-          asset-filename: midi-studio-default-firmware.hex
-
-      - name: Upload core firmware
-        uses: actions/upload-artifact@v7
-        with:
-          name: midi-studio-default-firmware
-          path: dist/midi-studio-default-firmware.hex
-
-  build_bitwig_firmware:
-    name: Fetch bitwig firmware
-    needs: [plan]
-    if: needs.plan.outputs.build_firmware_bitwig == '1'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout distribution
-        uses: actions/checkout@v6
-
-      - name: Setup release workspace
-        uses: ./.github/actions/setup-release-workspace
-        with:
-          tooling-sha: ${{ inputs.tooling_sha }}
-
-      - name: Materialize bitwig firmware candidate
-        uses: ./.github/actions/materialize-content-candidate
-        with:
-          spec-path: ${{ inputs.spec_path }}
-          target-id: plugin-bitwig-firmware
-          out-dir: ../dist
-          asset-filename: midi-studio-bitwig-firmware.hex
-
-      - name: Upload bitwig firmware
-        uses: actions/upload-artifact@v7
-        with:
-          name: midi-studio-bitwig-firmware
-          path: dist/midi-studio-bitwig-firmware.hex
-
-  build_bitwig_extension:
-    name: Fetch Bitwig extension
-    needs: [plan]
-    if: needs.plan.outputs.build_bitwig_extension == '1'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout distribution
-        uses: actions/checkout@v6
-
-      - name: Setup release workspace
-        uses: ./.github/actions/setup-release-workspace
-        with:
-          tooling-sha: ${{ inputs.tooling_sha }}
-
-      - name: Materialize bitwig extension candidate
-        uses: ./.github/actions/materialize-content-candidate
-        with:
-          spec-path: ${{ inputs.spec_path }}
-          target-id: plugin-bitwig-extension
-          out-dir: ../dist
-          asset-filename: midi_studio.bwextension
-
-      - name: Upload bitwig extension
-        uses: actions/upload-artifact@v7
-        with:
-          name: midi-studio-bitwig-extension
-          path: dist/midi_studio.bwextension
