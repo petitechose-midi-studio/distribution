@@ -132,18 +132,6 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Checkout ms-dev-env
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/ms-dev-env
-          ref: main
-          path: workspace
-
-      - name: Setup ms runtime
-        uses: ./workspace/.github/actions/setup-ms-runtime
-        with:
-          working-directory: workspace
-
       - name: Read release spec
         id: spec
         shell: bash
@@ -168,7 +156,26 @@ jobs:
 
           print(f"loader_sha={get_sha('loader')}")
           print(f"bridge_sha={get_sha('oc-bridge')}")
+          tooling = spec.get("tooling")
+          if not isinstance(tooling, dict):
+              raise SystemExit("missing tooling block in spec")
+          tooling_sha = tooling.get("sha")
+          if not isinstance(tooling_sha, str) or len(tooling_sha) != 40:
+              raise SystemExit(f"invalid tooling sha in spec: {tooling_sha!r}")
+          print(f"tooling_sha={tooling_sha}")
           PY
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: ${{ steps.spec.outputs.tooling_sha }}
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
 
       - name: Checkout oc-bridge config
         uses: actions/checkout@v6
@@ -185,10 +192,11 @@ jobs:
             cd workspace
             uv run ms release candidate fetch \
               --producer-id loader-binaries \
-              --candidate-tag "rc-${{ steps.spec.outputs.loader_sha }}" \
+              --candidate-tag "rc-${{ steps.spec.outputs.loader_sha }}-tooling-${{ steps.spec.outputs.tooling_sha }}" \
               --out-dir ../dist \
               --asset-filename "${{ matrix.loader_filename }}" \
-              --input-repo "loader=petitechose-midi-studio/loader=${{ steps.spec.outputs.loader_sha }}"
+              --input-repo "loader=petitechose-midi-studio/loader=${{ steps.spec.outputs.loader_sha }}" \
+              --input-repo "ms-dev-env=petitechose-midi-studio/ms-dev-env=${{ steps.spec.outputs.tooling_sha }}"
           )
 
       - name: Materialize oc-bridge candidate
@@ -199,10 +207,11 @@ jobs:
             cd workspace
             uv run ms release candidate fetch \
               --producer-id oc-bridge-binaries \
-              --candidate-tag "rc-${{ steps.spec.outputs.bridge_sha }}" \
+              --candidate-tag "rc-${{ steps.spec.outputs.bridge_sha }}-tooling-${{ steps.spec.outputs.tooling_sha }}" \
               --out-dir ../dist \
               --asset-filename "${{ matrix.bridge_filename }}" \
-              --input-repo "oc-bridge=open-control/bridge=${{ steps.spec.outputs.bridge_sha }}"
+              --input-repo "oc-bridge=open-control/bridge=${{ steps.spec.outputs.bridge_sha }}" \
+              --input-repo "ms-dev-env=petitechose-midi-studio/ms-dev-env=${{ steps.spec.outputs.tooling_sha }}"
           )
 
       - name: Package bundle
@@ -433,18 +442,6 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Checkout ms-dev-env
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/ms-dev-env
-          ref: main
-          path: workspace
-
-      - name: Setup ms runtime
-        uses: ./workspace/.github/actions/setup-ms-runtime
-        with:
-          working-directory: workspace
-
       - name: Read release spec
         id: spec
         shell: bash
@@ -461,7 +458,26 @@ jobs:
                   raise SystemExit(f"missing/invalid sha for {repo_id}: {sha!r}")
               return sha
           print(f"core_sha={get('core')}")
+          tooling = spec.get("tooling")
+          if not isinstance(tooling, dict):
+              raise SystemExit("missing tooling block in spec")
+          tooling_sha = tooling.get("sha")
+          if not isinstance(tooling_sha, str) or len(tooling_sha) != 40:
+              raise SystemExit(f"invalid tooling sha in spec: {tooling_sha!r}")
+          print(f"tooling_sha={tooling_sha}")
           PY
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: ${{ steps.spec.outputs.tooling_sha }}
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
 
       - name: Materialize core firmware candidate
         shell: bash
@@ -471,10 +487,11 @@ jobs:
             cd workspace
             uv run ms release candidate fetch \
               --producer-id core-default-firmware \
-              --candidate-tag "rc-${{ steps.spec.outputs.core_sha }}" \
+              --candidate-tag "rc-${{ steps.spec.outputs.core_sha }}-tooling-${{ steps.spec.outputs.tooling_sha }}" \
               --out-dir ../dist \
               --asset-filename "midi-studio-default-firmware.hex" \
-              --input-repo "core=petitechose-midi-studio/core=${{ steps.spec.outputs.core_sha }}"
+              --input-repo "core=petitechose-midi-studio/core=${{ steps.spec.outputs.core_sha }}" \
+              --input-repo "ms-dev-env=petitechose-midi-studio/ms-dev-env=${{ steps.spec.outputs.tooling_sha }}"
           )
 
       - name: Upload core firmware
@@ -493,18 +510,6 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Checkout ms-dev-env
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/ms-dev-env
-          ref: main
-          path: workspace
-
-      - name: Setup ms runtime
-        uses: ./workspace/.github/actions/setup-ms-runtime
-        with:
-          working-directory: workspace
-
       - name: Read release spec
         id: spec
         shell: bash
@@ -522,7 +527,26 @@ jobs:
               return sha
           print(f"core_sha={get('core')}")
           print(f"bitwig_sha={get('plugin-bitwig')}")
+          tooling = spec.get("tooling")
+          if not isinstance(tooling, dict):
+              raise SystemExit("missing tooling block in spec")
+          tooling_sha = tooling.get("sha")
+          if not isinstance(tooling_sha, str) or len(tooling_sha) != 40:
+              raise SystemExit(f"invalid tooling sha in spec: {tooling_sha!r}")
+          print(f"tooling_sha={tooling_sha}")
           PY
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: ${{ steps.spec.outputs.tooling_sha }}
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
 
       - name: Checkout core
         uses: actions/checkout@v6
@@ -558,12 +582,13 @@ jobs:
             cd workspace
             uv run ms release candidate fetch \
               --producer-id plugin-bitwig-firmware \
-              --candidate-tag "rc-plugin-bitwig-firmware-${{ steps.spec.outputs.core_sha }}-${{ steps.spec.outputs.bitwig_sha }}" \
+              --candidate-tag "rc-plugin-bitwig-firmware-${{ steps.spec.outputs.core_sha }}-${{ steps.spec.outputs.bitwig_sha }}-tooling-${{ steps.spec.outputs.tooling_sha }}" \
               --out-dir ../dist \
               --asset-filename "midi-studio-bitwig-firmware.hex" \
               --input-repo "plugin-bitwig=petitechose-midi-studio/plugin-bitwig=${{ steps.spec.outputs.bitwig_sha }}" \
               --input-repo "core=petitechose-midi-studio/core=${{ steps.spec.outputs.core_sha }}" \
-              --input-repo "ui=petitechose-midi-studio/ui=${{ steps.ui.outputs.ui_sha }}"
+              --input-repo "ui=petitechose-midi-studio/ui=${{ steps.ui.outputs.ui_sha }}" \
+              --input-repo "ms-dev-env=petitechose-midi-studio/ms-dev-env=${{ steps.spec.outputs.tooling_sha }}"
           )
 
       - name: Upload bitwig firmware
@@ -582,18 +607,6 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Checkout ms-dev-env
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/ms-dev-env
-          ref: main
-          path: workspace
-
-      - name: Setup ms runtime
-        uses: ./workspace/.github/actions/setup-ms-runtime
-        with:
-          working-directory: workspace
-
       - name: Read release spec
         id: spec
         shell: bash
@@ -608,7 +621,26 @@ jobs:
           if not isinstance(sha, str) or len(sha) != 40:
               raise SystemExit(f"missing/invalid sha for plugin-bitwig: {sha!r}")
           print(f"bitwig_sha={sha}")
+          tooling = spec.get("tooling")
+          if not isinstance(tooling, dict):
+              raise SystemExit("missing tooling block in spec")
+          tooling_sha = tooling.get("sha")
+          if not isinstance(tooling_sha, str) or len(tooling_sha) != 40:
+              raise SystemExit(f"invalid tooling sha in spec: {tooling_sha!r}")
+          print(f"tooling_sha={tooling_sha}")
           PY
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: ${{ steps.spec.outputs.tooling_sha }}
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
 
       - name: Materialize bitwig extension candidate
         shell: bash
@@ -618,10 +650,11 @@ jobs:
             cd workspace
             uv run ms release candidate fetch \
               --producer-id plugin-bitwig-extension \
-              --candidate-tag "rc-plugin-bitwig-extension-${{ steps.spec.outputs.bitwig_sha }}" \
+              --candidate-tag "rc-plugin-bitwig-extension-${{ steps.spec.outputs.bitwig_sha }}-tooling-${{ steps.spec.outputs.tooling_sha }}" \
               --out-dir ../dist \
               --asset-filename "midi_studio.bwextension" \
-              --input-repo "plugin-bitwig=petitechose-midi-studio/plugin-bitwig=${{ steps.spec.outputs.bitwig_sha }}"
+              --input-repo "plugin-bitwig=petitechose-midi-studio/plugin-bitwig=${{ steps.spec.outputs.bitwig_sha }}" \
+              --input-repo "ms-dev-env=petitechose-midi-studio/ms-dev-env=${{ steps.spec.outputs.tooling_sha }}"
           )
 
       - name: Upload bitwig extension

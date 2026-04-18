@@ -35,8 +35,15 @@ def _load_spec(path: Path) -> dict[str, object]:
     raw: object = json.loads(path.read_text(encoding="utf-8"))
     spec = _as_object(raw, "spec")
     schema = spec.get("schema")
-    if schema != 1:
-        raise ValueError(f"spec.schema: expected 1, got {schema!r}")
+    if schema != 2:
+        raise ValueError(f"spec.schema: expected 2, got {schema!r}")
+    tooling = _as_object(spec.get("tooling"), "spec.tooling")
+    repo = _as_str(tooling.get("repo"), "spec.tooling.repo")
+    ref = _as_str(tooling.get("ref"), "spec.tooling.ref")
+    sha = _as_str(tooling.get("sha"), "spec.tooling.sha")
+    if len(sha) != 40:
+        raise ValueError(f"spec.tooling.sha: expected 40 chars, got {sha!r}")
+    del repo, ref
     return spec
 
 

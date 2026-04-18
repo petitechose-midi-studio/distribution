@@ -11,10 +11,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import cast
-
 
 # Files that define how artifacts are built/packaged.
 # If any of these change since the previous tag, we force a full rebuild (no reuse).
@@ -31,7 +30,7 @@ JsonObject = dict[str, object]
 JsonArray = list[object]
 
 
-class AssetGroup(str, Enum):
+class AssetGroup(StrEnum):
     bundles = "bundles"
     firmware_default = "firmware_default"
     firmware_bitwig = "firmware_bitwig"
@@ -46,6 +45,13 @@ class SpecRepo:
     ref: str
     sha: str
     required_ci_workflow_file: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SpecTooling:
+    repo: str
+    ref: str
+    sha: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +90,7 @@ class ReleaseSpec:
     channel: str
     tag: str
     repos: tuple[SpecRepo, ...]
+    tooling: SpecTooling
     assets: tuple[SpecAsset, ...]
     install_sets: tuple[SpecInstallSet, ...]
     pages_demo_url: str | None
@@ -113,9 +120,17 @@ class PrevAssetMeta:
 
 
 @dataclass(frozen=True, slots=True)
+class PrevTooling:
+    repo: str
+    ref: str | None
+    sha: str
+
+
+@dataclass(frozen=True, slots=True)
 class PrevManifest:
     repos: dict[str, str]
     assets: dict[str, PrevAssetMeta]
+    tooling: PrevTooling | None
 
     def repo_sha(self, repo_id: str) -> str | None:
         return self.repos.get(repo_id)
@@ -132,6 +147,8 @@ class ReusePlan:
     recipe_current_fingerprint: str | None
     recipe_prev_fingerprint: str | None
     recipe_changed: bool
+    tooling_current_sha: str | None
+    tooling_prev_sha: str | None
     reuse: dict[AssetGroup, bool]
     build: dict[AssetGroup, bool]
     prev: PrevManifest
@@ -150,10 +167,25 @@ class ReusePlan:
                 "prev_fingerprint": self.recipe_prev_fingerprint,
                 "changed": self.recipe_changed,
             },
+            "tooling": {
+                "current_sha": self.tooling_current_sha,
+                "prev_sha": self.tooling_prev_sha,
+            },
             "reuse": {g.value: self.reuse.get(g, False) for g in AssetGroup},
             "build": {g.value: self.build.get(g, False) for g in AssetGroup},
             "prev": {
                 "repos": dict(self.prev.repos),
+                **(
+                    {
+                        "tooling": {
+                            "repo": self.prev.tooling.repo,
+                            "ref": self.prev.tooling.ref,
+                            "sha": self.prev.tooling.sha,
+                        }
+                    }
+                    if self.prev.tooling is not None
+                    else {}
+                ),
                 "assets": {
                     k: {
                         "filename": v.filename,
@@ -226,7 +258,7 @@ def _read_json_object(path: Path, ctx: str) -> JsonObject:
 
 def _parse_release_spec(obj: JsonObject) -> ReleaseSpec:
     schema = _as_int(obj.get("schema"), "spec.schema")
-    if schema != 1:
+    if schema != 2:
         raise ValueError(f"spec.schema: unsupported: {schema}")
 
     channel = _as_str(obj.get("channel"), "spec.channel")
@@ -246,6 +278,13 @@ def _parse_release_spec(obj: JsonObject) -> ReleaseSpec:
             r.get("required_ci_workflow_file"), f"spec.repos[{i}].required_ci_workflow_file"
         )
         repos.append(SpecRepo(id=repo_id, url=url, ref=ref, sha=sha, required_ci_workflow_file=wf))
+
+    tooling_obj = _as_object(obj.get("tooling"), "spec.tooling")
+    tooling_repo = _as_str(tooling_obj.get("repo"), "spec.tooling.repo")
+    tooling_ref = _as_str(tooling_obj.get("ref"), "spec.tooling.ref")
+    tooling_sha = _as_str(tooling_obj.get("sha"), "spec.tooling.sha")
+    if len(tooling_sha) != 40 or not _is_hex(tooling_sha):
+        raise ValueError("spec.tooling.sha: expected 40 hex chars")
 
     assets_raw = _as_array(obj.get("assets"), "spec.assets")
     assets: list[SpecAsset] = []
@@ -284,6 +323,7 @@ def _parse_release_spec(obj: JsonObject) -> ReleaseSpec:
         channel=channel,
         tag=tag,
         repos=tuple(repos),
+        tooling=SpecTooling(repo=tooling_repo, ref=tooling_ref, sha=tooling_sha),
         assets=tuple(assets),
         install_sets=tuple(install_sets),
         pages_demo_url=pages_demo_url,
@@ -424,7 +464,7 @@ def _run_ms_dist_manifest_verify(
 def _parse_prev_manifest(manifest_bytes: bytes) -> PrevManifest:
     obj = _load_json_object_from_bytes(manifest_bytes, "prev.manifest")
     schema = _as_int(obj.get("schema"), "prev.manifest.schema")
-    if schema != 2:
+    if schema not in {2, 3}:
         raise ValueError(f"prev.manifest.schema: unsupported: {schema}")
 
     repos_raw = _as_array(obj.get("repos"), "prev.manifest.repos")
@@ -449,14 +489,24 @@ def _parse_prev_manifest(manifest_bytes: bytes) -> PrevManifest:
         if len(sha256) != 64 or not _is_hex(sha256):
             raise ValueError(f"prev.manifest.assets[{i}].sha256: expected 64 hex chars")
         assets[aid] = PrevAssetMeta(filename=filename, size=size, sha256=sha256, url=url)
+    tooling: PrevTooling | None = None
+    tooling_any = obj.get("tooling")
+    if tooling_any is not None:
+        tooling_obj = _as_object(tooling_any, "prev.manifest.tooling")
+        tooling_repo = _as_str(tooling_obj.get("repo"), "prev.manifest.tooling.repo")
+        tooling_ref = _opt_str(tooling_obj.get("ref"), "prev.manifest.tooling.ref")
+        tooling_sha = _as_str(tooling_obj.get("sha"), "prev.manifest.tooling.sha")
+        if len(tooling_sha) != 40 or not _is_hex(tooling_sha):
+            raise ValueError("prev.manifest.tooling.sha: expected 40 hex chars")
+        tooling = PrevTooling(repo=tooling_repo, ref=tooling_ref, sha=tooling_sha)
 
-    return PrevManifest(repos=repos, assets=assets)
+    return PrevManifest(repos=repos, assets=assets, tooling=tooling)
 
 
 def _default_plan(*, repo: str, channel: str, tag: str, reason: str) -> ReusePlan:
     reuse = {g: False for g in AssetGroup}
     build = {g: True for g in AssetGroup}
-    prev = PrevManifest(repos={}, assets={})
+    prev = PrevManifest(repos={}, assets={}, tooling=None)
     return ReusePlan(
         schema=1,
         repo=repo,
@@ -467,6 +517,8 @@ def _default_plan(*, repo: str, channel: str, tag: str, reason: str) -> ReusePla
         recipe_current_fingerprint=None,
         recipe_prev_fingerprint=None,
         recipe_changed=True,
+        tooling_current_sha=None,
+        tooling_prev_sha=None,
         reuse=reuse,
         build=build,
         prev=prev,
@@ -517,9 +569,11 @@ def _compute_plan(
             recipe_current_fingerprint=current_fp,
             recipe_prev_fingerprint=prev_fp,
             recipe_changed=True,
+            tooling_current_sha=spec.tooling.sha,
+            tooling_prev_sha=None,
             reuse={g: False for g in AssetGroup},
             build={g: True for g in AssetGroup},
-            prev=PrevManifest(repos={}, assets={}),
+            prev=PrevManifest(repos={}, assets={}, tooling=None),
             reason="recipe_changed",
         )
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -566,9 +620,11 @@ def _compute_plan(
             recipe_current_fingerprint=current_fp,
             recipe_prev_fingerprint=prev_fp,
             recipe_changed=False,
+            tooling_current_sha=spec.tooling.sha,
+            tooling_prev_sha=None,
             reuse={g: False for g in AssetGroup},
             build={g: True for g in AssetGroup},
-            prev=PrevManifest(repos={}, assets={}),
+            prev=PrevManifest(repos={}, assets={}, tooling=None),
             reason="previous_manifest_verify_failed",
         )
         out_path.write_text(json.dumps(plan.to_json(), indent=2) + "\n", encoding="utf-8")
@@ -587,10 +643,39 @@ def _compute_plan(
             recipe_current_fingerprint=current_fp,
             recipe_prev_fingerprint=prev_fp,
             recipe_changed=False,
+            tooling_current_sha=spec.tooling.sha,
+            tooling_prev_sha=None,
             reuse={g: False for g in AssetGroup},
             build={g: True for g in AssetGroup},
-            prev=PrevManifest(repos={}, assets={}),
+            prev=PrevManifest(repos={}, assets={}, tooling=None),
             reason="previous_manifest_invalid",
+        )
+        out_path.write_text(json.dumps(plan.to_json(), indent=2) + "\n", encoding="utf-8")
+        return plan
+
+    prev_tooling_sha = prev.tooling.sha if prev.tooling is not None else None
+    tooling_changed = (
+        prev.tooling is None
+        or prev.tooling.repo != spec.tooling.repo
+        or prev.tooling.sha != spec.tooling.sha
+    )
+    if tooling_changed:
+        plan = ReusePlan(
+            schema=1,
+            repo=repo,
+            channel=spec.channel,
+            tag=spec.tag,
+            prev_tag=prev_tag,
+            recipe_paths=RECIPE_PATHS,
+            recipe_current_fingerprint=current_fp,
+            recipe_prev_fingerprint=prev_fp,
+            recipe_changed=False,
+            tooling_current_sha=spec.tooling.sha,
+            tooling_prev_sha=prev_tooling_sha,
+            reuse={g: False for g in AssetGroup},
+            build={g: True for g in AssetGroup},
+            prev=prev,
+            reason="tooling_changed",
         )
         out_path.write_text(json.dumps(plan.to_json(), indent=2) + "\n", encoding="utf-8")
         return plan
@@ -638,6 +723,8 @@ def _compute_plan(
         recipe_current_fingerprint=current_fp,
         recipe_prev_fingerprint=prev_fp,
         recipe_changed=False,
+        tooling_current_sha=spec.tooling.sha,
+        tooling_prev_sha=prev_tooling_sha,
         reuse=reuse,
         build=build,
         prev=prev,
@@ -671,6 +758,17 @@ def _plan_from_file(path: Path) -> ReusePlan:
     prev_fp = prev_fp_any if isinstance(prev_fp_any, str) and prev_fp_any else None
     changed_any = recipe_obj.get("changed")
     recipe_changed = bool(changed_any is True)
+    tooling_obj = _as_object(obj.get("tooling"), "plan.tooling")
+    current_tooling_any = tooling_obj.get("current_sha")
+    current_tooling_sha = (
+        current_tooling_any
+        if isinstance(current_tooling_any, str) and current_tooling_any
+        else None
+    )
+    prev_tooling_any = tooling_obj.get("prev_sha")
+    prev_tooling_sha = (
+        prev_tooling_any if isinstance(prev_tooling_any, str) and prev_tooling_any else None
+    )
 
     reuse_obj = _as_object(obj.get("reuse"), "plan.reuse")
     build_obj = _as_object(obj.get("build"), "plan.build")
@@ -700,6 +798,16 @@ def _plan_from_file(path: Path) -> ReusePlan:
         url = _opt_str(meta.get("url"), f"plan.prev.assets.{asset_id}.url")
         prev_assets[asset_id] = PrevAssetMeta(filename=filename, size=size, sha256=sha256, url=url)
 
+    prev_tooling: PrevTooling | None = None
+    prev_tooling_any = prev_root.get("tooling")
+    if prev_tooling_any is not None:
+        prev_tooling_obj = _as_object(prev_tooling_any, "plan.prev.tooling")
+        prev_tooling = PrevTooling(
+            repo=_as_str(prev_tooling_obj.get("repo"), "plan.prev.tooling.repo"),
+            ref=_opt_str(prev_tooling_obj.get("ref"), "plan.prev.tooling.ref"),
+            sha=_as_str(prev_tooling_obj.get("sha"), "plan.prev.tooling.sha"),
+        )
+
     reason = _as_str(obj.get("reason"), "plan.reason")
 
     return ReusePlan(
@@ -712,9 +820,11 @@ def _plan_from_file(path: Path) -> ReusePlan:
         recipe_current_fingerprint=current_fp,
         recipe_prev_fingerprint=prev_fp,
         recipe_changed=recipe_changed,
+        tooling_current_sha=current_tooling_sha,
+        tooling_prev_sha=prev_tooling_sha,
         reuse=reuse,
         build=build,
-        prev=PrevManifest(repos=prev_repos, assets=prev_assets),
+        prev=PrevManifest(repos=prev_repos, assets=prev_assets, tooling=prev_tooling),
         reason=reason,
     )
 
@@ -726,7 +836,7 @@ def _build_manifest(
     plan: ReusePlan,
     out_path: Path,
 ) -> None:
-    published_at = dt.datetime.now(tz=dt.timezone.utc).replace(microsecond=0).isoformat()
+    published_at = dt.datetime.now(tz=dt.UTC).replace(microsecond=0).isoformat()
     if published_at.endswith("+00:00"):
         published_at = published_at[:-6] + "Z"
 
@@ -793,11 +903,16 @@ def _build_manifest(
         install_sets_out.append(s_obj)
 
     manifest: JsonObject = {
-        "schema": 2,
+        "schema": 3,
         "channel": spec.channel,
         "tag": spec.tag,
         "published_at": published_at,
         "repos": repos_out,
+        "tooling": {
+            "repo": spec.tooling.repo,
+            "ref": spec.tooling.ref,
+            "sha": spec.tooling.sha,
+        },
         "assets": assets_out,
         "install_sets": install_sets_out,
     }
@@ -868,7 +983,8 @@ def _materialize_reused_assets(*, spec: ReleaseSpec, dist_dir: Path, plan: Reuse
             )
         if got_sha256 != meta.sha256:
             raise ValueError(
-                f"downloaded sha256 mismatch for {a.filename}: expected {meta.sha256} got {got_sha256}"
+                "downloaded sha256 mismatch for "
+                f"{a.filename}: expected {meta.sha256} got {got_sha256}"
             )
 
         tmp = p.with_name(p.name + ".part")
@@ -881,7 +997,8 @@ def _materialize_reused_assets(*, spec: ReleaseSpec, dist_dir: Path, plan: Reuse
         missing_preview = ", ".join(missing[:10])
         more = "" if len(missing) <= 10 else f" (+{len(missing) - 10} more)"
         raise FileNotFoundError(
-            f"materialize: missing assets (not reusable or missing prev meta): {missing_preview}{more}"
+            "materialize: missing assets "
+            f"(not reusable or missing prev meta): {missing_preview}{more}"
         )
 
     if not downloaded:
