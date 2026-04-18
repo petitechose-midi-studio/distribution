@@ -290,7 +290,7 @@ jobs:
           PK=$(cargo run -p ms-dist-manifest -- pubkey)
           MS_DIST_ED25519_PK="$PK" cargo run -p ms-dist-manifest -- verify --in manifest.json --sig manifest.json.sig
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (draft)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -304,5 +304,29 @@ jobs:
             --title "${{ needs.select_spec.outputs.tag }}" \
             --notes "channel=nightly" \
             --prerelease \
+            --draft \
             --target "${GITHUB_SHA}" \
             --repo "${GITHUB_REPOSITORY}"
+
+      - name: Verify uploaded assets match manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MS_DIST_ED25519_SK: ${{ secrets.MS_DIST_ED25519_SK_NIGHTLY }}
+        run: |
+          set -euo pipefail
+          rm -rf verify
+          mkdir -p verify
+          gh release download "${{ needs.select_spec.outputs.tag }}" --dir verify --repo "${GITHUB_REPOSITORY}"
+
+          PK=$(cargo run -p ms-dist-manifest -- pubkey)
+          MS_DIST_ED25519_PK="$PK" cargo run -p ms-dist-manifest -- verify --in verify/manifest.json --sig verify/manifest.json.sig
+          python scripts/verify_manifest_assets.py --manifest verify/manifest.json --assets-dir verify
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit "${{ needs.select_spec.outputs.tag }}" --draft=false --repo "${GITHUB_REPOSITORY}"
