@@ -130,50 +130,48 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          declare -a targets=(
-            "core-default-firmware:midi-studio-default-firmware.hex"
-            "plugin-bitwig-firmware:midi-studio-bitwig-firmware.hex"
-            "plugin-bitwig-extension:midi_studio.bwextension"
-          )
           (
             cd workspace
-            for entry in "${targets[@]}"; do
-              target_id="${entry%%:*}"
-              asset_filename="${entry#*:}"
-              uv run ms release content fetch-candidate \
-                --spec ../spec/release-spec.json \
-                --target-id "$target_id" \
-                --out-dir ../dist \
-                --asset-filename "$asset_filename"
-            done
+            uv run ms release content fetch-candidate \
+              --spec ../spec/release-spec.json \
+              --target-id core-default-firmware \
+              --out-dir ../dist \
+              --asset-filename midi-studio-default-firmware.hex
+            uv run ms release content fetch-candidate \
+              --spec ../spec/release-spec.json \
+              --target-id plugin-bitwig-firmware \
+              --out-dir ../dist \
+              --asset-filename midi-studio-bitwig-firmware.hex
+            uv run ms release content fetch-candidate \
+              --spec ../spec/release-spec.json \
+              --target-id plugin-bitwig-extension \
+              --out-dir ../dist \
+              --asset-filename midi_studio.bwextension
           )
 
       - name: Materialize loader and oc-bridge candidates
         shell: bash
         run: |
           set -euo pipefail
-          declare -a targets=(
-            "loader-binaries:midi-studio-loader-windows-x86_64.exe"
-            "loader-binaries:midi-studio-loader-linux-x86_64"
-            "loader-binaries:midi-studio-loader-macos-x86_64"
-            "loader-binaries:midi-studio-loader-macos-arm64"
-            "oc-bridge-binaries:oc-bridge-windows-x86_64.exe"
-            "oc-bridge-binaries:oc-bridge-linux-x86_64"
-            "oc-bridge-binaries:oc-bridge-macos-x86_64"
-            "oc-bridge-binaries:oc-bridge-macos-arm64"
-            "oc-bridge-binaries:oc-bridge-config.zip"
-          )
           (
             cd workspace
-            for entry in "${targets[@]}"; do
-              target_id="${entry%%:*}"
-              asset_filename="${entry#*:}"
-              uv run ms release content fetch-candidate \
-                --spec ../spec/release-spec.json \
-                --target-id "$target_id" \
-                --out-dir ../dist \
-                --asset-filename "$asset_filename"
-            done
+            uv run ms release content fetch-candidate \
+              --spec ../spec/release-spec.json \
+              --target-id loader-binaries \
+              --out-dir ../dist \
+              --asset-filename midi-studio-loader-windows-x86_64.exe \
+              --asset-filename midi-studio-loader-linux-x86_64 \
+              --asset-filename midi-studio-loader-macos-x86_64 \
+              --asset-filename midi-studio-loader-macos-arm64
+            uv run ms release content fetch-candidate \
+              --spec ../spec/release-spec.json \
+              --target-id oc-bridge-binaries \
+              --out-dir ../dist \
+              --asset-filename oc-bridge-windows-x86_64.exe \
+              --asset-filename oc-bridge-linux-x86_64 \
+              --asset-filename oc-bridge-macos-x86_64 \
+              --asset-filename oc-bridge-macos-arm64 \
+              --asset-filename oc-bridge-config.zip
           )
 
       - name: Extract oc-bridge config
