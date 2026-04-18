@@ -30,6 +30,13 @@ def _add_tree(zf: zipfile.ZipFile, root: pathlib.Path, prefix: str) -> None:
         _add_file(zf, p, arc)
 
 
+def _bundle_bin_name(src: pathlib.Path, canonical_stem: str) -> str:
+    suffix = src.suffix.lower()
+    if suffix == ".exe":
+        return f"{canonical_stem}.exe"
+    return canonical_stem
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Create a MIDI Studio bundle zip")
     ap.add_argument("--out", required=True, help="Output zip path")
@@ -50,8 +57,8 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(out, "w") as zf:
-        _add_file(zf, oc_bridge, f"bin/{oc_bridge.name}")
-        _add_file(zf, loader, f"bin/{loader.name}")
+        _add_file(zf, oc_bridge, f"bin/{_bundle_bin_name(oc_bridge, 'oc-bridge')}")
+        _add_file(zf, loader, f"bin/{_bundle_bin_name(loader, 'midi-studio-loader')}")
         # oc-bridge discovers config next to the executable.
         # The bundle must ship config under bin/config/**.
         _add_tree(zf, oc_cfg, "bin/config")
