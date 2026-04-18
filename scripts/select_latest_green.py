@@ -2,11 +2,10 @@ import argparse
 import json
 import os
 import sys
-from typing import Any
-from typing import cast
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Any, cast
 
 
 def _repo_slug_from_url(url: str) -> str:
@@ -36,7 +35,7 @@ def _get_latest_green_sha(token: str, owner_repo: str, workflow_file: str) -> st
             data: dict[str, Any] = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         msg = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"GitHub API error for {owner_repo}: {e.code} {msg}")
+        raise RuntimeError(f"GitHub API error for {owner_repo}: {e.code} {msg}") from e
 
     runs_any = data.get("workflow_runs")
     if not isinstance(runs_any, list) or not runs_any:
@@ -66,7 +65,7 @@ def _get_head_sha(token: str, owner_repo: str, ref: str) -> str:
             data: dict[str, Any] = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         msg = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"GitHub API error for {owner_repo}@{ref}: {e.code} {msg}")
+        raise RuntimeError(f"GitHub API error for {owner_repo}@{ref}: {e.code} {msg}") from e
 
     sha = data.get("sha")
     if not isinstance(sha, str) or len(sha) != 40:
@@ -74,11 +73,30 @@ def _get_head_sha(token: str, owner_repo: str, ref: str) -> str:
     return sha
 
 
+def _load_tooling(path: str) -> dict[str, str]:
+    with open(path, encoding="utf-8") as f:
+        raw_any: object = json.load(f)
+    if not isinstance(raw_any, dict):
+        raise RuntimeError("tooling file must be a JSON object")
+    raw = cast(dict[object, object], raw_any)
+    repo = raw.get("repo")
+    ref = raw.get("ref")
+    sha = raw.get("sha")
+    if not isinstance(repo, str) or not repo:
+        raise RuntimeError("tooling file missing repo")
+    if not isinstance(ref, str) or not ref:
+        raise RuntimeError("tooling file missing ref")
+    if not isinstance(sha, str) or len(sha) != 40:
+        raise RuntimeError("tooling file missing valid sha")
+    return {"repo": repo, "ref": ref, "sha": sha}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Select latest green commits and fill a release spec")
     ap.add_argument("--template", required=True, help="Path to nightly.template.json")
     ap.add_argument("--out", required=True, help="Output release spec path")
     ap.add_argument("--tag", required=True, help="Nightly tag to write")
+    ap.add_argument("--tooling-file", required=True, help="Path to release tooling JSON")
     ap.add_argument("--token-env", default="GITHUB_TOKEN", help="GitHub token env var")
     args = ap.parse_args()
 
@@ -87,7 +105,7 @@ def main() -> int:
         print(f"missing env var: {args.token_env}", file=sys.stderr)
         return 1
 
-    with open(args.template, "r", encoding="utf-8") as f:
+    with open(args.template, encoding="utf-8") as f:
         spec_any = json.load(f)
     if not isinstance(spec_any, dict):
         print("template must be a JSON object", file=sys.stderr)
@@ -100,6 +118,7 @@ def main() -> int:
         return 1
 
     repos = cast(list[Any], repos_any)
+    spec["tooling"] = _load_tooling(args.tooling_file)
 
     for r_obj in repos:
         if not isinstance(r_obj, dict):

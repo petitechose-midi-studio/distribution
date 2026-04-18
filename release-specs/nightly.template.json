@@ -2,6 +2,11 @@
   "schema": 1,
   "channel": "nightly",
   "tag": "nightly-YYYY-MM-DD",
+  "tooling": {
+    "repo": "petitechose-midi-studio/ms-dev-env",
+    "ref": "main",
+    "sha": "0000000000000000000000000000000000000000"
+  },
   "repos": [
     {
       "id": "loader",
