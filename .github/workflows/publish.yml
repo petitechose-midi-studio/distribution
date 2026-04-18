@@ -98,7 +98,7 @@ jobs:
           path: out/reuse-plan.json
 
   build_bundles:
-    name: Build bundles (${{ matrix.bundle_os }}-${{ matrix.arch }})
+    name: Package bundles (${{ matrix.bundle_os }}-${{ matrix.arch }})
     needs: [plan]
     if: needs.plan.outputs.build_bundles == '1'
     runs-on: ${{ matrix.runner }}
@@ -107,30 +107,42 @@ jobs:
       matrix:
         include:
           - runner: windows-latest
-            rust_target: x86_64-pc-windows-msvc
             bundle_os: windows
             arch: x86_64
-            exe: .exe
+            loader_filename: midi-studio-loader-windows-x86_64.exe
+            bridge_filename: oc-bridge-windows-x86_64.exe
           - runner: ubuntu-latest
-            rust_target: x86_64-unknown-linux-gnu
             bundle_os: linux
             arch: x86_64
-            exe: ""
+            loader_filename: midi-studio-loader-linux-x86_64
+            bridge_filename: oc-bridge-linux-x86_64
           - runner: macos-15-intel
-            rust_target: x86_64-apple-darwin
             bundle_os: macos
             arch: x86_64
-            exe: ""
+            loader_filename: midi-studio-loader-macos-x86_64
+            bridge_filename: oc-bridge-macos-x86_64
           - runner: macos-latest
-            rust_target: aarch64-apple-darwin
             bundle_os: macos
             arch: arm64
-            exe: ""
+            loader_filename: midi-studio-loader-macos-arm64
+            bridge_filename: oc-bridge-macos-arm64
 
 
     steps:
       - name: Checkout distribution
         uses: actions/checkout@v6
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: main
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
 
       - name: Read release spec
         id: spec
@@ -158,68 +170,47 @@ jobs:
           print(f"bridge_sha={get_sha('oc-bridge')}")
           PY
 
-      - name: Checkout loader
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/loader
-          ref: ${{ steps.spec.outputs.loader_sha }}
-          path: src/loader
-
-      - name: Checkout oc-bridge
+      - name: Checkout oc-bridge config
         uses: actions/checkout@v6
         with:
           repository: open-control/bridge
           ref: ${{ steps.spec.outputs.bridge_sha }}
           path: src/oc-bridge
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_target }}
-
-      - name: Install Linux system deps
-        if: matrix.bundle_os == 'linux'
+      - name: Materialize loader candidate
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev libusb-1.0-0-dev
+          (
+            cd workspace
+            uv run ms release candidate fetch \
+              --producer-id loader-binaries \
+              --candidate-tag "rc-${{ steps.spec.outputs.loader_sha }}" \
+              --out-dir ../dist \
+              --asset-filename "${{ matrix.loader_filename }}" \
+              --input-repo "loader=petitechose-midi-studio/loader=${{ steps.spec.outputs.loader_sha }}"
+          )
 
-      - name: Build loader
+      - name: Materialize oc-bridge candidate
         shell: bash
-        env:
-          CARGO_PROFILE_RELEASE_OPT_LEVEL: z
-          CARGO_PROFILE_RELEASE_LTO: "true"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
-          CARGO_PROFILE_RELEASE_PANIC: abort
-          CARGO_PROFILE_RELEASE_STRIP: symbols
-          CARGO_PROFILE_RELEASE_DEBUG: "0"
         run: |
           set -euo pipefail
-          cargo build --release --target "${{ matrix.rust_target }}" --no-default-features --features cli
-        working-directory: src/loader
-
-      - name: Build oc-bridge
-        shell: bash
-        env:
-          CARGO_PROFILE_RELEASE_OPT_LEVEL: z
-          CARGO_PROFILE_RELEASE_LTO: "true"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
-          CARGO_PROFILE_RELEASE_PANIC: abort
-          CARGO_PROFILE_RELEASE_STRIP: symbols
-          CARGO_PROFILE_RELEASE_DEBUG: "0"
-        run: |
-          set -euo pipefail
-          cargo build --release --target "${{ matrix.rust_target }}"
-        working-directory: src/oc-bridge
+          (
+            cd workspace
+            uv run ms release candidate fetch \
+              --producer-id oc-bridge-binaries \
+              --candidate-tag "rc-${{ steps.spec.outputs.bridge_sha }}" \
+              --out-dir ../dist \
+              --asset-filename "${{ matrix.bridge_filename }}" \
+              --input-repo "oc-bridge=open-control/bridge=${{ steps.spec.outputs.bridge_sha }}"
+          )
 
       - name: Package bundle
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
-          LOADER="src/loader/target/${{ matrix.rust_target }}/release/midi-studio-loader${{ matrix.exe }}"
-          BRIDGE="src/oc-bridge/target/${{ matrix.rust_target }}/release/oc-bridge${{ matrix.exe }}"
+          LOADER="dist/${{ matrix.loader_filename }}"
+          BRIDGE="dist/${{ matrix.bridge_filename }}"
           test -f "$LOADER"
           test -f "$BRIDGE"
           OUT="dist/midi-studio-${{ matrix.bundle_os }}-${{ matrix.arch }}-bundle.zip"
@@ -433,7 +424,7 @@ jobs:
           gh release edit "${{ inputs.tag }}" --draft=false --repo "${GITHUB_REPOSITORY}"
 
   build_core_firmware:
-    name: Build core firmware (default)
+    name: Fetch core firmware (default)
     needs: [plan]
     if: needs.plan.outputs.build_firmware_default == '1'
     runs-on: ubuntu-latest
@@ -441,6 +432,18 @@ jobs:
     steps:
       - name: Checkout distribution
         uses: actions/checkout@v6
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: main
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
 
       - name: Read release spec
         id: spec
@@ -460,34 +463,19 @@ jobs:
           print(f"core_sha={get('core')}")
           PY
 
-      - name: Checkout core
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/core
-          ref: ${{ steps.spec.outputs.core_sha }}
-          path: src/midi-studio/core
-
-      - name: Install PlatformIO
+      - name: Materialize core firmware candidate
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install platformio
-
-      - name: Build core firmware (default)
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m platformio run -e release
-        working-directory: src/midi-studio/core
-
-      - name: Collect artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp "src/midi-studio/core/.pio/build/release/firmware.hex" "dist/midi-studio-default-firmware.hex"
-          ls -la dist
+          (
+            cd workspace
+            uv run ms release candidate fetch \
+              --producer-id core-default-firmware \
+              --candidate-tag "rc-${{ steps.spec.outputs.core_sha }}" \
+              --out-dir ../dist \
+              --asset-filename "midi-studio-default-firmware.hex" \
+              --input-repo "core=petitechose-midi-studio/core=${{ steps.spec.outputs.core_sha }}"
+          )
 
       - name: Upload core firmware
         uses: actions/upload-artifact@v7
@@ -496,7 +484,7 @@ jobs:
           path: dist/midi-studio-default-firmware.hex
 
   build_bitwig_firmware:
-    name: Build bitwig firmware
+    name: Fetch bitwig firmware
     needs: [plan]
     if: needs.plan.outputs.build_firmware_bitwig == '1'
     runs-on: ubuntu-latest
@@ -504,6 +492,18 @@ jobs:
     steps:
       - name: Checkout distribution
         uses: actions/checkout@v6
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: main
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
 
       - name: Read release spec
         id: spec
@@ -550,41 +550,21 @@ jobs:
           print(f"ui_sha={match.group(1)}")
           PY
 
-      - name: Checkout ui
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/ui
-          ref: ${{ steps.ui.outputs.ui_sha }}
-          path: src/midi-studio/ui
-
-      - name: Checkout plugin-bitwig
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/plugin-bitwig
-          ref: ${{ steps.spec.outputs.bitwig_sha }}
-          path: src/midi-studio/plugin-bitwig
-
-      - name: Install PlatformIO
+      - name: Materialize bitwig firmware candidate
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install platformio
-
-      - name: Build bitwig firmware
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m platformio run -e release
-        working-directory: src/midi-studio/plugin-bitwig
-
-      - name: Collect artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp "src/midi-studio/plugin-bitwig/.pio/build/release/firmware.hex" "dist/midi-studio-bitwig-firmware.hex"
-          ls -la dist
+          (
+            cd workspace
+            uv run ms release candidate fetch \
+              --producer-id plugin-bitwig-firmware \
+              --candidate-tag "rc-plugin-bitwig-firmware-${{ steps.spec.outputs.core_sha }}-${{ steps.spec.outputs.bitwig_sha }}" \
+              --out-dir ../dist \
+              --asset-filename "midi-studio-bitwig-firmware.hex" \
+              --input-repo "plugin-bitwig=petitechose-midi-studio/plugin-bitwig=${{ steps.spec.outputs.bitwig_sha }}" \
+              --input-repo "core=petitechose-midi-studio/core=${{ steps.spec.outputs.core_sha }}" \
+              --input-repo "ui=petitechose-midi-studio/ui=${{ steps.ui.outputs.ui_sha }}"
+          )
 
       - name: Upload bitwig firmware
         uses: actions/upload-artifact@v7
@@ -593,7 +573,7 @@ jobs:
           path: dist/midi-studio-bitwig-firmware.hex
 
   build_bitwig_extension:
-    name: Build Bitwig extension
+    name: Fetch Bitwig extension
     needs: [plan]
     if: needs.plan.outputs.build_bitwig_extension == '1'
     runs-on: ubuntu-latest
@@ -601,6 +581,18 @@ jobs:
     steps:
       - name: Checkout distribution
         uses: actions/checkout@v6
+
+      - name: Checkout ms-dev-env
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ms-dev-env
+          ref: main
+          path: workspace
+
+      - name: Setup ms runtime
+        uses: ./workspace/.github/actions/setup-ms-runtime
+        with:
+          working-directory: workspace
 
       - name: Read release spec
         id: spec
@@ -618,34 +610,19 @@ jobs:
           print(f"bitwig_sha={sha}")
           PY
 
-      - name: Checkout plugin-bitwig
-        uses: actions/checkout@v6
-        with:
-          repository: petitechose-midi-studio/plugin-bitwig
-          ref: ${{ steps.spec.outputs.bitwig_sha }}
-          path: src/midi-studio/plugin-bitwig
-
-      - name: Install Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Build Bitwig extension
+      - name: Materialize bitwig extension candidate
         shell: bash
         run: |
           set -euo pipefail
-          mvn package -Pmanual -Dmaven.compiler.release=21
-        working-directory: src/midi-studio/plugin-bitwig/host
-
-      - name: Collect artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp "src/midi-studio/plugin-bitwig/host/target/midi_studio.bwextension" "dist/midi_studio.bwextension"
-          ls -la dist
+          (
+            cd workspace
+            uv run ms release candidate fetch \
+              --producer-id plugin-bitwig-extension \
+              --candidate-tag "rc-plugin-bitwig-extension-${{ steps.spec.outputs.bitwig_sha }}" \
+              --out-dir ../dist \
+              --asset-filename "midi_studio.bwextension" \
+              --input-repo "plugin-bitwig=petitechose-midi-studio/plugin-bitwig=${{ steps.spec.outputs.bitwig_sha }}"
+          )
 
       - name: Upload bitwig extension
         uses: actions/upload-artifact@v7
