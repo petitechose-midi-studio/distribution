@@ -157,17 +157,10 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Checkout ms-dev-env
-        uses: actions/checkout@v6
+      - name: Setup release workspace
+        uses: ./.github/actions/setup-release-workspace
         with:
-          repository: petitechose-midi-studio/ms-dev-env
-          ref: ${{ inputs.tooling_sha }}
-          path: workspace
-
-      - name: Setup ms runtime
-        uses: ./workspace/.github/actions/setup-ms-runtime
-        with:
-          working-directory: workspace
+          tooling-sha: ${{ inputs.tooling_sha }}
 
       - name: Export spec inputs
         id: spec
@@ -191,30 +184,20 @@ jobs:
           path: src/oc-bridge
 
       - name: Materialize loader candidate
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd workspace
-            uv run ms release content fetch-candidate \
-              --spec "../${{ inputs.spec_path }}" \
-              --target-id loader-binaries \
-              --out-dir ../dist \
-              --asset-filename "${{ matrix.loader_filename }}"
-          )
+        uses: ./.github/actions/materialize-content-candidate
+        with:
+          spec-path: ${{ inputs.spec_path }}
+          target-id: loader-binaries
+          out-dir: ../dist
+          asset-filename: ${{ matrix.loader_filename }}
 
       - name: Materialize oc-bridge candidate
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd workspace
-            uv run ms release content fetch-candidate \
-              --spec "../${{ inputs.spec_path }}" \
-              --target-id oc-bridge-binaries \
-              --out-dir ../dist \
-              --asset-filename "${{ matrix.bridge_filename }}"
-          )
+        uses: ./.github/actions/materialize-content-candidate
+        with:
+          spec-path: ${{ inputs.spec_path }}
+          target-id: oc-bridge-binaries
+          out-dir: ../dist
+          asset-filename: ${{ matrix.bridge_filename }}
 
       - name: Package bundle
         shell: bash
@@ -444,30 +427,18 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Checkout ms-dev-env
-        uses: actions/checkout@v6
+      - name: Setup release workspace
+        uses: ./.github/actions/setup-release-workspace
         with:
-          repository: petitechose-midi-studio/ms-dev-env
-          ref: ${{ inputs.tooling_sha }}
-          path: workspace
-
-      - name: Setup ms runtime
-        uses: ./workspace/.github/actions/setup-ms-runtime
-        with:
-          working-directory: workspace
+          tooling-sha: ${{ inputs.tooling_sha }}
 
       - name: Materialize core firmware candidate
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd workspace
-            uv run ms release content fetch-candidate \
-              --spec "../${{ inputs.spec_path }}" \
-              --target-id core-default-firmware \
-              --out-dir ../dist \
-              --asset-filename "midi-studio-default-firmware.hex"
-          )
+        uses: ./.github/actions/materialize-content-candidate
+        with:
+          spec-path: ${{ inputs.spec_path }}
+          target-id: core-default-firmware
+          out-dir: ../dist
+          asset-filename: midi-studio-default-firmware.hex
 
       - name: Upload core firmware
         uses: actions/upload-artifact@v7
@@ -485,30 +456,18 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Checkout ms-dev-env
-        uses: actions/checkout@v6
+      - name: Setup release workspace
+        uses: ./.github/actions/setup-release-workspace
         with:
-          repository: petitechose-midi-studio/ms-dev-env
-          ref: ${{ inputs.tooling_sha }}
-          path: workspace
-
-      - name: Setup ms runtime
-        uses: ./workspace/.github/actions/setup-ms-runtime
-        with:
-          working-directory: workspace
+          tooling-sha: ${{ inputs.tooling_sha }}
 
       - name: Materialize bitwig firmware candidate
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd workspace
-            uv run ms release content fetch-candidate \
-              --spec "../${{ inputs.spec_path }}" \
-              --target-id plugin-bitwig-firmware \
-              --out-dir ../dist \
-              --asset-filename "midi-studio-bitwig-firmware.hex"
-          )
+        uses: ./.github/actions/materialize-content-candidate
+        with:
+          spec-path: ${{ inputs.spec_path }}
+          target-id: plugin-bitwig-firmware
+          out-dir: ../dist
+          asset-filename: midi-studio-bitwig-firmware.hex
 
       - name: Upload bitwig firmware
         uses: actions/upload-artifact@v7
@@ -526,30 +485,18 @@ jobs:
       - name: Checkout distribution
         uses: actions/checkout@v6
 
-      - name: Checkout ms-dev-env
-        uses: actions/checkout@v6
+      - name: Setup release workspace
+        uses: ./.github/actions/setup-release-workspace
         with:
-          repository: petitechose-midi-studio/ms-dev-env
-          ref: ${{ inputs.tooling_sha }}
-          path: workspace
-
-      - name: Setup ms runtime
-        uses: ./workspace/.github/actions/setup-ms-runtime
-        with:
-          working-directory: workspace
+          tooling-sha: ${{ inputs.tooling_sha }}
 
       - name: Materialize bitwig extension candidate
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd workspace
-            uv run ms release content fetch-candidate \
-              --spec "../${{ inputs.spec_path }}" \
-              --target-id plugin-bitwig-extension \
-              --out-dir ../dist \
-              --asset-filename "midi_studio.bwextension"
-          )
+        uses: ./.github/actions/materialize-content-candidate
+        with:
+          spec-path: ${{ inputs.spec_path }}
+          target-id: plugin-bitwig-extension
+          out-dir: ../dist
+          asset-filename: midi_studio.bwextension
 
       - name: Upload bitwig extension
         uses: actions/upload-artifact@v7
