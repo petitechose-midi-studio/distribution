@@ -1,0 +1,22 @@
+name: Setup release workspace
+description: Checkout ms-dev-env at a pinned tooling SHA and sync the runtime.
+
+inputs:
+  tooling-sha:
+    description: ms-dev-env tooling SHA to checkout.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout ms-dev-env
+      uses: actions/checkout@v6
+      with:
+        repository: petitechose-midi-studio/ms-dev-env
+        ref: ${{ inputs.tooling-sha }}
+        path: workspace
+
+    - name: Setup ms runtime
+      uses: ./workspace/.github/actions/setup-ms-runtime
+      with:
+        working-directory: workspace
