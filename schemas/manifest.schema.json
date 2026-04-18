@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://petitechose-midi-studio.github.io/distribution/schemas/manifest.schema.json",
-  "title": "MIDI Studio manifest v2 (outputs)",
+  "title": "MIDI Studio manifest v3 (outputs)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "channel", "tag", "published_at", "repos", "assets", "install_sets"],
+  "required": ["schema", "channel", "tag", "published_at", "repos", "tooling", "assets", "install_sets"],
   "properties": {
     "schema": {
       "type": "integer",
-      "const": 2
+      "const": 3
     },
     "channel": {
       "type": "string",
@@ -34,6 +34,16 @@
           "url": { "type": "string", "format": "uri" },
           "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
         }
+      }
+    },
+    "tooling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "ref", "sha"],
+      "properties": {
+        "repo": { "type": "string", "minLength": 1 },
+        "ref": { "type": "string", "minLength": 1 },
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
       }
     },
     "assets": {

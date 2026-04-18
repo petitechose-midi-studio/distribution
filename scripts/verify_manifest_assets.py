@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import urllib.request
 import zipfile
 from pathlib import Path
 from typing import cast
-import urllib.request
 
 
 def _as_object(v: object, ctx: str) -> dict[str, object]:
@@ -58,13 +58,12 @@ def _download_to_path(*, url: str, out_path: Path) -> None:
     tmp = out_path.with_name(out_path.name + ".part")
 
     req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=120) as r:
-        with tmp.open("wb") as f:
-            while True:
-                b = r.read(1024 * 1024)
-                if not b:
-                    break
-                f.write(b)
+    with urllib.request.urlopen(req, timeout=120) as r, tmp.open("wb") as f:
+        while True:
+            b = r.read(1024 * 1024)
+            if not b:
+                break
+            f.write(b)
 
     tmp.replace(out_path)
 
@@ -103,8 +102,15 @@ def main() -> int:
     raw: object = json.loads(manifest_path.read_text(encoding="utf-8"))
     m = _as_object(raw, "manifest")
     schema = _as_int(m.get("schema"), "manifest.schema")
-    if schema != 2:
-        raise ValueError(f"manifest.schema: expected 2, got {schema}")
+    if schema not in {2, 3}:
+        raise ValueError(f"manifest.schema: expected 2 or 3, got {schema}")
+    if schema == 3:
+        tooling = _as_object(m.get("tooling"), "manifest.tooling")
+        repo = _as_str(tooling.get("repo"), "manifest.tooling.repo")
+        sha = _as_str(tooling.get("sha"), "manifest.tooling.sha")
+        if len(sha) != 40:
+            raise ValueError(f"manifest.tooling.sha: expected 40 chars, got {sha!r}")
+        del repo
 
     assets = _as_array(m.get("assets"), "manifest.assets")
 
