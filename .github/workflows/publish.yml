@@ -1,6 +1,6 @@
 name: Publish
 
-run-name: Publish ${{ inputs.tag }} / ${{ inputs.channel }} / ${{ inputs.request_id }}
+run-name: Publish ${{ inputs.tag }} / ${{ inputs.channel }}
 
 on:
   workflow_dispatch:
@@ -44,6 +44,27 @@ env:
   GIT_CONFIG_VALUE_0: main
 
 jobs:
+  dispatch_marker:
+    name: register dispatch
+    if: ${{ inputs.request_id != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write dispatch marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dispatch
+          cat > dispatch/marker.json <<'EOF'
+          {"request_id":"${{ inputs.request_id }}"}
+          EOF
+
+      - name: Upload dispatch marker
+        uses: actions/upload-artifact@v7
+        with:
+          name: dispatch-${{ inputs.request_id }}
+          path: dispatch/marker.json
+          retention-days: 1
+
   plan:
     name: Plan (reuse vs build)
     runs-on: ubuntu-latest
