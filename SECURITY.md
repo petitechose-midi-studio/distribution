@@ -16,10 +16,6 @@ Stable/beta releases are signed in GitHub Actions using an **Environment secret*
 - Environment: `release`
 - Secret: `MS_DIST_ED25519_SK` (base64, 32-byte Ed25519 signing key seed)
 
-Nightly uses a separate key (recommended):
-- Environment: `nightly`
-- Secret: `MS_DIST_ED25519_SK_NIGHTLY` (base64, 32-byte Ed25519 signing key seed)
-
 Public keys are embedded in `ms-manager`.
 
 ## Why workflows are sensitive
@@ -38,7 +34,6 @@ Branch protection on `main`:
 Actions environments:
 - `release` environment requires approval (at least you)
 - Put `MS_DIST_ED25519_SK` only in the `release` environment
-- `nightly` environment can remain unapproved, but should use a separate key
 
 ## Channel selection
 
