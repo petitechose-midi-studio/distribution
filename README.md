@@ -6,6 +6,16 @@ It will contain:
 - `schemas/`: JSON schemas for the release inputs (`release-spec.json`) and outputs (`manifest.json`).
 - GitHub Releases: bundle assets + `manifest.json` + `manifest.json.sig`.
 
+## Release Policy
+
+- `distribution` is the canonical public release surface for the MIDI Studio payload.
+- It publishes the exact end-user content consumed by `ms-manager`: bundles, firmware, extension,
+  `manifest.json`, and `manifest.json.sig`.
+- It does not rebuild producer repos during release publication. Producer artifacts are consumed as
+  signed candidates and then assembled into the final distribution release.
+- It does not ship `ms-manager`. `ms-manager` is a separate app release that consumes the signed
+  distribution feed.
+
 ## Signing
 
 - `manifest.json.sig` is an Ed25519 detached signature over the exact bytes of `manifest.json`.
