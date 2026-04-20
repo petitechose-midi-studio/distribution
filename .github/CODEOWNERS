@@ -5,7 +5,6 @@
 
 /.github/workflows/ @petitechose-midi-studio/release-managers
 /scripts/ @petitechose-midi-studio/release-managers
-/release-specs/nightly.template.json @petitechose-midi-studio/release-managers
 /schemas/ @petitechose-midi-studio/release-managers
 /Cargo.lock @petitechose-midi-studio/release-managers
 * @petitechose-midi-studio/owners

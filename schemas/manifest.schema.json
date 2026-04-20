@@ -12,7 +12,7 @@
     },
     "channel": {
       "type": "string",
-      "enum": ["stable", "beta", "nightly"]
+      "enum": ["stable", "beta"]
     },
     "tag": {
       "type": "string",
