@@ -68,10 +68,36 @@ jobs:
   build_dist:
     name: Materialize dist + validate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout distribution
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Validate publish inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          tooling_sha="${{ inputs.tooling_sha }}"
+          spec_path="${{ inputs.spec_path }}"
+          if ! [[ "$tooling_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "invalid tooling SHA: $tooling_sha" >&2
+            exit 1
+          fi
+          if [[ "$spec_path" = /* || "$spec_path" == *".."* || "$spec_path" != release-specs/*.json ]]; then
+            echo "spec_path must be a release-specs/*.json path in this repo: $spec_path" >&2
+            exit 1
+          fi
+          tooling_repo="$(mktemp -d)"
+          git -C "$tooling_repo" init -q
+          git -C "$tooling_repo" remote add origin https://github.com/petitechose-midi-studio/ms-dev-env.git
+          git -C "$tooling_repo" fetch --no-tags --filter=blob:none origin "+refs/heads/main:refs/remotes/origin/main"
+          if ! git -C "$tooling_repo" merge-base --is-ancestor "$tooling_sha" refs/remotes/origin/main; then
+            echo "tooling SHA is not reachable from ms-dev-env main: $tooling_sha" >&2
+            exit 1
+          fi
 
       - name: Setup release workspace
         uses: ./.github/actions/setup-release-workspace
@@ -181,6 +207,7 @@ jobs:
   release:
     name: Sign and publish release
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build_dist]
     if: ${{ always() && needs.build_dist.result == 'success' }}
     environment: release
@@ -191,6 +218,19 @@ jobs:
     steps:
       - name: Checkout distribution
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Ensure release does not already exist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "${{ inputs.tag }}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "release already exists: ${{ inputs.tag }}" >&2
+            exit 1
+          fi
 
       - name: Download dist
         shell: bash
