@@ -238,8 +238,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p assembled
-          gh run download "${{ github.run_id }}" --repo "${GITHUB_REPOSITORY}" --dir assembled --name dist
+          mkdir -p assembled/dist
+          gh run download "${{ github.run_id }}" --repo "${GITHUB_REPOSITORY}" --dir assembled/dist --name dist
 
       - name: Inspect assembled dist
         shell: bash
