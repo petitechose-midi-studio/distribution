@@ -42,6 +42,7 @@ def main() -> int:
     ap.add_argument("--out", required=True, help="Output zip path")
     ap.add_argument("--oc-bridge", required=True, help="Path to oc-bridge binary")
     ap.add_argument("--loader", required=True, help="Path to midi-studio-loader binary")
+    ap.add_argument("--ms-core-file-tool", required=True, help="Path to ms-core-file-tool binary")
     ap.add_argument(
         "--oc-bridge-config",
         required=True,
@@ -52,6 +53,7 @@ def main() -> int:
     out = pathlib.Path(args.out)
     oc_bridge = pathlib.Path(args.oc_bridge)
     loader = pathlib.Path(args.loader)
+    core_file_tool = pathlib.Path(args.ms_core_file_tool)
     oc_cfg = pathlib.Path(args.oc_bridge_config)
 
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -59,6 +61,11 @@ def main() -> int:
     with zipfile.ZipFile(out, "w") as zf:
         _add_file(zf, oc_bridge, f"bin/{_bundle_bin_name(oc_bridge, 'oc-bridge')}")
         _add_file(zf, loader, f"bin/{_bundle_bin_name(loader, 'midi-studio-loader')}")
+        _add_file(
+            zf,
+            core_file_tool,
+            f"bin/{_bundle_bin_name(core_file_tool, 'ms-core-file-tool')}",
+        )
         # oc-bridge discovers config next to the executable.
         # The bundle must ship config under bin/config/**.
         _add_tree(zf, oc_cfg, "bin/config")

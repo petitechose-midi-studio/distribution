@@ -104,7 +104,7 @@ jobs:
         with:
           tooling-sha: ${{ inputs.tooling_sha }}
 
-      - name: Materialize firmware and extension candidates
+      - name: Materialize firmware, host tools, and extension candidates
         shell: bash
         run: |
           set -euo pipefail
@@ -115,6 +115,14 @@ jobs:
               --target-id core-default-firmware \
               --out-dir ../dist \
               --asset-filename midi-studio-default-firmware.hex
+            uv run ms release content fetch-candidate \
+              --spec "../${{ inputs.spec_path }}" \
+              --target-id core-host-tools \
+              --out-dir ../dist \
+              --asset-filename ms-core-file-tool-windows-x86_64.exe \
+              --asset-filename ms-core-file-tool-linux-x86_64 \
+              --asset-filename ms-core-file-tool-macos-x86_64 \
+              --asset-filename ms-core-file-tool-macos-arm64
             uv run ms release content fetch-candidate \
               --spec "../${{ inputs.spec_path }}" \
               --target-id plugin-bitwig-firmware \
@@ -175,21 +183,25 @@ jobs:
             --out dist/midi-studio-windows-x86_64-bundle.zip \
             --loader dist/midi-studio-loader-windows-x86_64.exe \
             --oc-bridge dist/oc-bridge-windows-x86_64.exe \
+            --ms-core-file-tool dist/ms-core-file-tool-windows-x86_64.exe \
             --oc-bridge-config dist/oc-bridge-config
           python scripts/package_bundle.py \
             --out dist/midi-studio-linux-x86_64-bundle.zip \
             --loader dist/midi-studio-loader-linux-x86_64 \
             --oc-bridge dist/oc-bridge-linux-x86_64 \
+            --ms-core-file-tool dist/ms-core-file-tool-linux-x86_64 \
             --oc-bridge-config dist/oc-bridge-config
           python scripts/package_bundle.py \
             --out dist/midi-studio-macos-x86_64-bundle.zip \
             --loader dist/midi-studio-loader-macos-x86_64 \
             --oc-bridge dist/oc-bridge-macos-x86_64 \
+            --ms-core-file-tool dist/ms-core-file-tool-macos-x86_64 \
             --oc-bridge-config dist/oc-bridge-config
           python scripts/package_bundle.py \
             --out dist/midi-studio-macos-arm64-bundle.zip \
             --loader dist/midi-studio-loader-macos-arm64 \
             --oc-bridge dist/oc-bridge-macos-arm64 \
+            --ms-core-file-tool dist/ms-core-file-tool-macos-arm64 \
             --oc-bridge-config dist/oc-bridge-config
 
       - name: Validate dist against spec
