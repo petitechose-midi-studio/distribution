@@ -9,12 +9,14 @@ from pathlib import Path
 def test_package_bundle_normalizes_runtime_binary_names(tmp_path: Path) -> None:
     loader = tmp_path / "midi-studio-loader-windows-x86_64.exe"
     bridge = tmp_path / "oc-bridge-windows-x86_64.exe"
+    core_file_tool = tmp_path / "ms-core-file-tool-windows-x86_64.exe"
     config_dir = tmp_path / "config"
     device_dir = config_dir / "devices"
     out = tmp_path / "bundle.zip"
 
     loader.write_bytes(b"loader")
     bridge.write_bytes(b"bridge")
+    core_file_tool.write_bytes(b"core-file-tool")
     device_dir.mkdir(parents=True)
     (config_dir / "default.toml").write_text("default = true\n", encoding="utf-8")
     (device_dir / "teensy.toml").write_text("device = 'teensy'\n", encoding="utf-8")
@@ -29,6 +31,8 @@ def test_package_bundle_normalizes_runtime_binary_names(tmp_path: Path) -> None:
             str(loader),
             "--oc-bridge",
             str(bridge),
+            "--core-file-tool",
+            str(core_file_tool),
             "--oc-bridge-config",
             str(config_dir),
         ],
@@ -41,5 +45,6 @@ def test_package_bundle_normalizes_runtime_binary_names(tmp_path: Path) -> None:
 
     assert "bin/midi-studio-loader.exe" in names
     assert "bin/oc-bridge.exe" in names
+    assert "bin/ms-core-file-tool.exe" in names
     assert "bin/config/default.toml" in names
     assert "bin/config/devices/teensy.toml" in names

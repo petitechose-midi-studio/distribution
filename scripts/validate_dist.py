@@ -58,6 +58,8 @@ def _validate_bundle_zip(path: Path) -> None:
         raise ValueError(f"{path.name}: missing bin/oc-bridge(.exe)")
     if not (has_exact("bin/midi-studio-loader") or has_exact("bin/midi-studio-loader.exe")):
         raise ValueError(f"{path.name}: missing bin/midi-studio-loader(.exe)")
+    if not (has_exact("bin/ms-core-file-tool") or has_exact("bin/ms-core-file-tool.exe")):
+        raise ValueError(f"{path.name}: missing bin/ms-core-file-tool(.exe)")
     if not has_exact("bin/config/default.toml"):
         raise ValueError(f"{path.name}: missing bin/config/default.toml")
     if not has_exact("bin/config/devices/teensy.toml"):
